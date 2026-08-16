@@ -1,243 +1,505 @@
-# Otoichi (音市) — Backend Service
+# Otoichi (音市)
 
-Otoichi is a production-grade online vinyl record marketplace backend built with Python 3.12, FastAPI, SQLAlchemy 2.0 (async), PostgreSQL, Alembic, Pydantic v2, and Stripe.
+> A full-stack vinyl record marketplace engineered for music discovery, streaming audio previews, and idempotent Stripe payment fulfillment.
+
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React_19-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
+![Vite](https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white)
+![Python](https://img.shields.io/badge/Python_3.12+-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![MongoDB](https://img.shields.io/badge/MongoDB_Atlas-47A248?style=for-the-badge&logo=mongodb&logoColor=white)
+![Stripe](https://img.shields.io/badge/Stripe_SDK-626CD9?style=for-the-badge&logo=stripe&logoColor=white)
+![JWT](https://img.shields.io/badge/JWT_Auth-000000?style=for-the-badge&logo=jsonwebtokens&logoColor=white)
 
 ---
 
-## 1. Project Overview
+## Visual Showcase
 
-Otoichi provides an authoritative, secure, and robust REST API for vinyl record discovery, catalog browsing, cart management (guest and authenticated), Stripe checkout with webhooks, price snapshotting, concurrency-safe inventory decrements, promotional coupons, verified purchaser reviews, and metadata enrichment from Spotify and iTunes.
+### Marketplace Home & 3D Coverflow Hero
+![Otoichi Home](./shot/home.png)
+
+### Crate Browsing & Goldmine Grading
+![Browse & Filters](./shot/browse.png)
+
+### Master Pressing Details & Side A / Side B Tracklist
+![Product Detail](./shot/shop_album.png)
+
+### Persistent 30-Second Streamable Audio Preview
+![Audio Player](./shot/track_preview.png)
 
 ---
 
-## 2. Architecture
+## 1. Overview
 
-The application follows a clean layered architecture with strict separation of concerns:
+**Otoichi (音市)** is a full-stack ecommerce marketplace designed for audiophiles and vinyl collectors. The platform bridges physical crate-digging aesthetics with modern, production-grade web architecture.
 
-```text
-app/
-├── main.py                     # FastAPI app factory, CORS, exception handlers, and routing
-├── core/
-│   ├── config.py               # Pydantic BaseSettings environment configuration
-│   ├── security.py             # Bcrypt hashing & PyJWT token management (access & refresh)
-│   ├── exceptions.py           # Domain exceptions & standard error formatting
-│   └── dependencies.py         # DB session, auth (get_current_user, require_admin), guest sessions
-├── db/
-│   ├── base.py                 # SQLAlchemy DeclarativeBase, UUIDMixin, TimestampMixin
-│   ├── session.py              # Async engine & session factory
-│   └── models/                 # SQLAlchemy 2.0 models (User, Address, Artist, Album, Track,
-│                               # VinylProduct, CartItem, Order, OrderItem, Wishlist, Review,
-│                               # Coupon, StockNotification, StripeWebhookEvent)
-├── schemas/                    # Pydantic v2 validation models and response DTOs
-├── services/                   # Encapsulated business domain services:
-│   ├── auth_service.py         # Registration, password validation, token rotation
-│   ├── cart_service.py         # Authenticated & guest carts, cart merging
-│   ├── inventory_service.py    # Concurrency-safe inventory locking (SELECT FOR UPDATE)
-│   ├── order_service.py        # Order lifecycle, frozen price snapshots, status transitions
-│   ├── coupon_service.py       # Atomic coupon application and boundary checks
-│   ├── payment_service.py      # Abstract payment interface + Stripe implementation
-│   ├── review_service.py       # Verified delivered purchase requirement enforcement
-│   ├── spotify_service.py      # Spotify Web API client (Client Credentials flow)
-│   ├── itunes_service.py       # iTunes Search API client (30s audio previews)
-│   └── sync_service.py         # Catalog metadata synchronization pipeline
-└── api/
-    └── v1/                     # Clean RESTful API version 1 endpoint controllers
+Key platform characteristics:
+* **Rich Storefront & Audio Discovery**: 3D perspective Coverflow carousel, Goldmine standard grading inspection (Mint, Near Mint, Very Good Plus), vinyl variant badges (180g virgin vinyl, 45 RPM 7" singles, 12" LPs), and streamable 30-second audio previews synchronized with Spotify and Apple iTunes APIs.
+* **Service-Oriented Backend**: Async FastAPI application backed by MongoDB Atlas and Beanie ODM, enforcing strict domain boundaries across authentication, catalog indexing, cart synchronization, coupon validation, inventory locks, and order management.
+* **Authoritative Payment Architecture**: Official Stripe React Elements integration with server-authoritative price recalculations, PaymentIntent generation with idempotency keys, and asynchronous webhook-driven order fulfillment.
+
+---
+
+## 2. Engineering Highlights
+
+* **Stripe Webhook as the Authoritative Fulfillment Engine**: Payments are never fulfilled directly from client-side state. The backend listens for `payment_intent.succeeded` events, verifies HMAC signatures using raw request payload bytes, deduplicates deliveries using a persistent `StripeWebhookEvent` collection, and commits inventory decrements idempotently.
+* **Zero-Trust Pricing Calculation**: Subtotals, coupon discounts, and shipping tiers are calculated server-side from the active database. Client-sent prices and totals are discarded. Free shipping is automatically applied for orders exceeding `$100.00`, with unified flat-rate courier shipping applied otherwise.
+* **Promotional Zero-Total Order Handling**: When promotional coupons yield a 100% discount, the system bypasses Stripe PaymentIntent creation entirely and routes through a dedicated `zero-total-order` transaction to prevent invalid `$0.00` payment charges.
+* **Concurrency-Safe Inventory Management**: Stock decrements use MongoDB atomic conditional updates (`$gte`) to prevent race conditions and overselling during simultaneous checkout attempts. Cancelled orders automatically restore reserved quantities.
+* **Clean State Separation**: Explicit separation between order lifecycle states (`pending`, `paid`, `processing`, `shipped`, `delivered`, `cancelled`, `refunded`) and payment provider states (`requires_payment_method`, `requires_confirmation`, `requires_action`, `processing`, `succeeded`, `failed`, `cancelled`, `refunded`, `partially_refunded`).
+* **Dual-Source Music Metadata Ingestion**: Ingests master catalog metadata (album art, ISRCs, release years, tracklists) via the Spotify Web API (Client Credentials flow) and pairs each track with 30-second playable AAC preview streams from the Apple iTunes Search API.
+* **Custom Themed Stripe Elements**: Embedded Stripe Payment Elements customized via Stripe's Appearance API to match Otoichi's dark lacquer (`#1C1814`), warm ivory (`#F3ECDD`), and brass (`#C89B3C`) design tokens.
+
+---
+
+## 3. System Architecture
+
+```mermaid
+flowchart TD
+    subgraph Client ["Client Layer (React 19 + Vite)"]
+        UI[Storefront UI]
+        AudioCtx[AudioContext Preview Player]
+        CartCtx[CartContext]
+        StripeElem[Stripe Payment Element]
+    end
+
+    subgraph Gateway ["API & Router Layer (FastAPI)"]
+        Router[REST API v1 Router]
+        AuthMW[JWT Auth Middleware & RBAC]
+        SigVerify[Stripe Signature Verification]
+    end
+
+    subgraph Services ["Service Layer"]
+        AuthSvc[AuthService]
+        CatalogSvc[Catalog & Sync Service]
+        CartSvc[CartService]
+        OrderSvc[OrderService]
+        InvSvc[InventoryService]
+        PaySvc[PaymentService]
+        CouponSvc[CouponService]
+    end
+
+    subgraph Data ["Persistence (MongoDB Atlas / Beanie ODM)"]
+        Users[(Users & Addresses)]
+        CatalogDB[(Albums, Tracks, Artists)]
+        ProductsDB[(Vinyl Products & Stock)]
+        OrdersDB[(Orders & OrderItems)]
+        WebhooksDB[(StripeWebhookEvents)]
+    end
+
+    subgraph External ["External Services"]
+        Spotify[Spotify Web API]
+        iTunes[Apple iTunes Search API]
+        StripeAPI[Stripe Payment Gateway]
+    end
+
+    UI --> Router
+    StripeElem --> StripeAPI
+    Router --> AuthMW
+    Router --> SigVerify
+    AuthMW --> AuthSvc
+    SigVerify --> PaySvc
+
+    Router --> CatalogSvc
+    Router --> CartSvc
+    Router --> OrderSvc
+    Router --> CouponSvc
+
+    CatalogSvc --> Spotify
+    CatalogSvc --> iTunes
+    PaySvc --> StripeAPI
+
+    OrderSvc --> InvSvc
+    OrderSvc --> CouponSvc
+
+    AuthSvc --> Users
+    CatalogSvc --> CatalogDB
+    InvSvc --> ProductsDB
+    OrderSvc --> OrdersDB
+    PaySvc --> WebhooksDB
 ```
 
 ---
 
-## 3. Technology Stack
+## 4. Payment & Order Fulfillment Lifecycle
 
-- **Language**: Python 3.12+
-- **Web Framework**: FastAPI (Async ASGI)
-- **Database & ORM**: PostgreSQL with SQLAlchemy 2.0 (`asyncpg` for app, `psycopg` binary)
-- **Schema Validation**: Pydantic v2 (`pydantic-settings`)
-- **Database Migrations**: Alembic
-- **Authentication**: JWT (Short-lived Access Tokens + Long-lived Refresh Tokens) + Bcrypt
-- **Payments**: Stripe Test Mode (Payment Intents + Webhooks with signature verification)
-- **Integrations**: Spotify Web API (Client Credentials) & Apple iTunes Search API
-- **Testing**: Pytest + `pytest-asyncio` + `aiosqlite` in-memory test database
-- **Containerization**: Docker & Docker Compose
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Customer
+    participant Frontend as React Frontend
+    participant Backend as FastAPI Server
+    participant Stripe as Stripe Gateway
+    participant Database as MongoDB Atlas
+
+    Customer->>Frontend: Click "Proceed to Checkout"
+    Frontend->>Backend: POST /api/v1/checkout/summary (Cart + Coupon)
+    Backend->>Database: Query current product prices & stock availability
+    Backend-->>Frontend: Authoritative Summary (Subtotal, Discount, Shipping, Total)
+    
+    Frontend->>Backend: POST /api/v1/checkout/create-intent
+    Backend->>Database: Insert Pending Order (status='pending', payment_status='requires_payment_method')
+    Backend->>Stripe: stripe.PaymentIntent.create(amount, currency, idempotency_key, metadata)
+    Stripe-->>Backend: Return PaymentIntent (id, client_secret)
+    Backend->>Database: Link stripe_payment_intent_id to Order
+    Backend-->>Frontend: Return client_secret & authoritative totals
+    
+    Frontend->>Frontend: Mount Stripe Elements (<PaymentElement />)
+    Customer->>Frontend: Enter Card Details & Submit Payment
+    Frontend->>Stripe: stripe.confirmPayment({ elements, return_url })
+    
+    alt 3D Secure / SCA Required
+        Stripe-->>Customer: Present 3DS Authentication Modal
+        Customer->>Stripe: Complete Biometric / OTP Challenge
+    end
+
+    Stripe-->>Frontend: Payment status: 'succeeded' / 'processing'
+    
+    Note over Stripe,Backend: Asynchronous Authoritative Webhook
+    Stripe->>Backend: POST /api/v1/webhooks/stripe (payment_intent.succeeded)
+    Backend->>Backend: Verify Stripe signature using raw request bytes
+    Backend->>Database: Check StripeWebhookEvent (deduplication check)
+    
+    alt Event Not Yet Processed
+        Backend->>Database: Log event_id in StripeWebhookEvent
+        Backend->>Database: Atomic conditional stock decrement (stock >= qty)
+        Backend->>Database: Increment coupon usage counter
+        Backend->>Database: Update Order (status='paid', payment_status='succeeded', paid_at=now)
+        Backend->>Database: Clear User Cart
+    end
+    
+    Backend-->>Stripe: HTTP 200 OK {"received": true}
+    Frontend->>Customer: Navigate to /order-success (Display real Order Reference & Status)
+```
 
 ---
 
-## 4. Requirements & Installation
+## 5. Data Model
 
-### Local Prerequisites
-- Python 3.12+ (or `uv`)
-- PostgreSQL 15+ (or Docker)
+The domain layer is structured using Beanie Document models with indexes on queried and relational fields:
 
-### Installation Steps
+```mermaid
+erDiagram
+    USER ||--o{ ADDRESS : has
+    USER ||--o{ ORDER : places
+    USER ||--o{ CART_ITEM : owns
+    USER ||--o{ REVIEW : writes
+    USER ||--o{ WISHLIST : saves
+
+    ARTIST ||--o{ ALBUM : creates
+    ARTIST ||--o{ TRACK : performs
+    ALBUM ||--o{ TRACK : contains
+    ALBUM ||--o{ VINYL_PRODUCT : "pressed as"
+    TRACK ||--o{ VINYL_PRODUCT : "pressed as (7-inch single)"
+
+    ORDER ||--|{ ORDER_ITEM : includes
+    VINYL_PRODUCT ||--o{ ORDER_ITEM : "purchased in"
+    VINYL_PRODUCT ||--o{ CART_ITEM : "added to"
+    COUPON ||--o{ ORDER : "applied to"
+
+    USER {
+        uuid id PK
+        string email UK
+        string hashed_password
+        string full_name
+        string role "customer | admin"
+        datetime created_at
+    }
+
+    VINYL_PRODUCT {
+        uuid id PK
+        string product_type "album | single"
+        uuid album_id FK
+        uuid track_id FK
+        string format "7-inch | 12-inch | LP | EP"
+        string vinyl_variant "standard | colored | splatter"
+        float price
+        int stock_quantity
+        string sku UK
+    }
+
+    ORDER {
+        uuid id PK
+        uuid user_id FK
+        string status "pending | paid | processing | shipped | delivered | cancelled"
+        string payment_status "requires_payment_method | processing | succeeded | failed"
+        float subtotal_amount
+        float shipping_amount
+        float discount_amount
+        float total_amount
+        string stripe_payment_intent_id UK
+        string checkout_id
+        datetime paid_at
+        datetime created_at
+    }
+
+    COUPON {
+        uuid id PK
+        string code UK
+        string discount_type "percent | fixed"
+        float value
+        int usage_limit
+        int times_used
+        bool is_active
+    }
+```
+
+---
+
+## 6. API Overview
+
+The backend exposes a fully typed RESTful API under the `/api/v1` prefix. Interactive Swagger UI is available at `/docs`.
+
+| Module | Method | Endpoint | Description | Auth Required |
+| :--- | :--- | :--- | :--- | :--- |
+| **Authentication** | `POST` | `/api/v1/auth/register` | Create customer account | No |
+| | `POST` | `/api/v1/auth/login` | Authenticate & retrieve JWT access token | No |
+| | `POST` | `/api/v1/auth/refresh` | Rotate access token via refresh token | No |
+| | `GET` | `/api/v1/auth/me` | Fetch authenticated user profile & addresses | Yes (Customer) |
+| **Products & Catalog** | `GET` | `/api/v1/products/` | Filter products by genre, format, price, stock, query | No |
+| | `GET` | `/api/v1/products/{id}` | Retrieve individual vinyl product details | No |
+| | `GET` | `/api/v1/albums/` | List all curated vinyl albums | No |
+| | `GET` | `/api/v1/albums/{id}` | Retrieve album tracklist & associated pressings | No |
+| **Cart** | `GET` | `/api/v1/cart/` | Get active cart items and subtotal | Yes (Session/JWT) |
+| | `POST` | `/api/v1/cart/items` | Add product to cart with quantity validation | Yes (Session/JWT) |
+| | `PUT` | `/api/v1/cart/items/{id}`| Update cart item quantity | Yes (Session/JWT) |
+| | `DELETE`| `/api/v1/cart/items/{id}`| Remove item from cart | Yes (Session/JWT) |
+| **Checkout & Payments**| `POST` | `/api/v1/checkout/summary` | Get authoritative server pricing calculation | Yes (Customer) |
+| | `POST` | `/api/v1/checkout/create-intent` | Initialize Stripe PaymentIntent & client secret | Yes (Customer) |
+| | `POST` | `/api/v1/checkout/zero-total-order` | Complete 100% coupon promotional order | Yes (Customer) |
+| | `POST` | `/api/v1/checkout/direct-order` | Internal direct order creation (test mode) | Yes (Customer) |
+| **Webhooks** | `POST` | `/api/v1/webhooks/stripe` | Authoritative Stripe event handler (HMAC signature) | No (Stripe Sig) |
+| **Orders** | `GET` | `/api/v1/orders/` | List customer order history | Yes (Customer) |
+| | `GET` | `/api/v1/orders/{id}` | Get detailed order snapshot & items | Yes (Customer) |
+| **Coupons & Promo** | `POST` | `/api/v1/coupons/validate` | Validate coupon code against cart subtotal | No |
+| **Admin** | `GET` | `/api/v1/admin/metrics` | System sales, revenue, and inventory analytics | Yes (Admin) |
+| | `PATCH` | `/api/v1/admin/orders/{id}/status`| Update order status with transition validation | Yes (Admin) |
+| | `POST` | `/api/v1/admin/sync/spotify`| Trigger Spotify/iTunes metadata sync pipeline | Yes (Admin) |
+
+---
+
+## 7. Tech Stack
+
+| Layer | Technology | Details |
+| :--- | :--- | :--- |
+| **Frontend Framework** | React 19 + Vite 8 | Single Page Application with client-side routing |
+| **Frontend Routing** | React Router v7 | Dynamic product, category, cart, and checkout routing |
+| **Payment UI** | `@stripe/react-stripe-js` | Stripe Payment Elements with custom theme |
+| **Styling** | Vanilla CSS Design Tokens | HSL-tailored palette, brass accents, glassmorphism, responsive grid |
+| **Icons & Visuals** | Lucide React + Canvas Confetti | Vector icons and interactive celebration feedback |
+| **Backend Framework** | FastAPI (Python 3.12+) | Asynchronous ASGI REST API framework |
+| **Database & ODM** | MongoDB Atlas + Beanie ODM | Document database with Motor async driver and Pydantic schemas |
+| **Authentication** | JWT (PyJWT) + Passlib (Bcrypt) | Short-lived access tokens (1h) + Refresh tokens (7d) |
+| **Payment Gateway** | Stripe Python SDK | PaymentIntents, Webhook signature verification, SCA/3DS |
+| **External APIs** | Spotify Web API + Apple iTunes API | Album art, track metadata, and 30-second audio stream ingestion |
+| **Testing** | Pytest + `pytest-asyncio` + HTTPX | Automated test suite covering auth, cart, payments, webhooks |
+
+---
+
+## 8. Project Structure
+
+```text
+Otoichi/
+├── app/
+│   ├── main.py                     # FastAPI application factory, CORS, exception handlers
+│   ├── core/
+│   │   ├── config.py               # Pydantic BaseSettings environment configuration
+│   │   ├── security.py             # Bcrypt hashing & PyJWT token management
+│   │   ├── exceptions.py           # Domain exception classes & error schema handlers
+│   │   └── dependencies.py         # DB session, auth providers (get_current_user, require_admin)
+│   ├── db/
+│   │   ├── mongo.py                # Motor client initialization & Beanie document registration
+│   │   └── models/                 # Beanie documents (User, Order, VinylProduct, Album, Track, etc.)
+│   ├── schemas/                    # Pydantic request validation and response DTO schemas
+│   ├── services/                   # Encapsulated domain business logic:
+│   │   ├── auth_service.py         # Registration, authentication, token rotation
+│   │   ├── cart_service.py         # Authenticated & guest cart operations
+│   │   ├── coupon_service.py       # Discount calculation & usage limits
+│   │   ├── inventory_service.py    # Atomic stock decrement and cancellation restoration
+│   │   ├── itunes_service.py       # Apple iTunes 30s preview retrieval
+│   │   ├── order_service.py        # Order creation, authoritative pricing, state machine
+│   │   ├── payment_service.py      # Stripe SDK client & webhook signature verification
+│   │   ├── review_service.py       # Verified purchaser review enforcement
+│   │   ├── spotify_service.py      # Spotify Web API client (Client Credentials)
+│   │   └── sync_service.py         # Catalog sync coordinator
+│   └── api/
+│       └── v1/                     # Version 1 API route controllers
+├── frontend/
+│   ├── src/
+│   │   ├── api/                    # API client layer & Stripe loader
+│   │   ├── components/             # Reusable UI components (CoverflowHero, AudioPlayerBar, StripeCheckoutForm)
+│   │   ├── context/                # React Contexts (AudioContext, CartContext, AuthContext)
+│   │   ├── pages/                  # Route views (HomePage, BrowsePage, ProductDetailPage, CheckoutPage, etc.)
+│   │   ├── utils/                  # Product display normalizers
+│   │   ├── App.jsx                 # Application layout and global audio bar
+│   │   └── index.css               # Global design tokens and animations
+│   ├── package.json
+│   └── vite.config.js
+├── scripts/                        # Database seeding and metadata sync automation scripts
+├── shot/                           # High-resolution application screenshots
+├── tests/                          # Automated Pytest suite (34 test cases)
+├── .env.example                    # Environment variable template
+├── requirements.txt                # Python backend dependencies
+└── README.md
+```
+
+---
+
+## 9. Local Development Setup
+
+### Prerequisites
+* Python 3.12+
+* Node.js 18+ and npm
+* MongoDB Atlas instance or local MongoDB server (`mongodb://localhost:27017`)
+* Stripe developer account (for test API keys)
+
+---
+
+### Backend Setup
 
 1. **Clone the repository**:
    ```bash
-   git clone <repo-url>
+   git clone https://github.com/animesh68/Otoichi.git
    cd Otoichi
    ```
 
-2. **Create virtual environment and install dependencies**:
+2. **Create and activate a virtual environment**:
    ```bash
-   uv venv .venv
    # Windows:
+   python -m venv .venv
    .venv\Scripts\activate
-   uv pip install -r requirements.txt
 
    # Linux / macOS:
+   python3 -m venv .venv
    source .venv/bin/activate
+   ```
+
+3. **Install Python dependencies**:
+   ```bash
    pip install -r requirements.txt
    ```
 
-3. **Configure Environment Variables**:
-   Copy `.env.example` to `.env`:
+4. **Configure environment variables**:
+   Create a `.env` file from `.env.example`:
    ```bash
    cp .env.example .env
+   ```
+   Fill in your `DATABASE_URL`, `JWT_SECRET`, and Stripe test credentials.
+
+5. **Start the FastAPI server**:
+   ```bash
+   uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+   ```
+   API docs will be live at: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+
+---
+
+### Frontend Setup
+
+1. **Navigate to the frontend directory**:
+   ```bash
+   cd frontend
+   ```
+
+2. **Install Node dependencies**:
+   ```bash
+   npm install
+   ```
+
+3. **Configure Frontend Environment Variables (Optional)**:
+   Create `frontend/.env.local`:
+   ```env
+   VITE_API_BASE_URL=http://127.0.0.1:8000/api/v1
+   VITE_STRIPE_PUBLISHABLE_KEY=pk_test_your_stripe_publishable_key_here
+   ```
+
+4. **Start the Vite development server**:
+   ```bash
+   npm run dev
+   ```
+   Frontend will be live at: [http://127.0.0.1:5173/](http://127.0.0.1:5173/)
+
+---
+
+## 10. Stripe Development & Webhook Setup
+
+To test live asynchronous payment fulfillment locally:
+
+1. Obtain your Stripe test keys (`pk_test_...` and `sk_test_...`) from the [Stripe Dashboard](https://dashboard.stripe.com/apikeys).
+2. Install the [Stripe CLI](https://stripe.com/docs/stripe-cli).
+3. Authenticate the CLI:
+   ```bash
+   stripe login
+   ```
+4. Forward incoming webhook events to your local FastAPI backend:
+   ```bash
+   stripe listen --forward-to 127.0.0.1:8000/api/v1/webhooks/stripe
+   ```
+5. Copy the printed webhook signing secret (`whsec_...`) into your backend `.env`:
+   ```env
+   STRIPE_WEBHOOK_SECRET=whsec_your_secret_here
+   ```
+6. Trigger a test event:
+   ```bash
+   stripe trigger payment_intent.succeeded
    ```
 
 ---
 
-## 5. Running with Docker Compose
+## 11. Automated Testing
 
-To start both PostgreSQL and the FastAPI application in Docker with automatic migration and seeding:
-
-```bash
-docker-compose up --build
-```
-
-The API will be available at:
-`http://localhost:8000`
-
----
-
-## 6. Database Migrations (Alembic)
-
-Run migrations to bring the database schema up to the latest revision:
+The backend includes a comprehensive test suite written with `pytest` and `pytest-asyncio`.
 
 ```bash
-alembic upgrade head
+# Run all test suites
+pytest tests/ -v
 ```
 
-To create a new migration:
-```bash
-alembic revision --autogenerate -m "describe_changes"
-```
+### Test Coverage Highlights
+* **Authentication**: Registration, duplicate email rejection, JWT creation, token refresh, admin RBAC guards.
+* **Cart Operations**: Session carting, authenticated user cart persistence, stock limit boundary enforcement, guest-to-user cart merging.
+* **Checkout & Pricing**: Authoritative price calculation, coupon discounts, free shipping thresholds, zero-total promotional order paths.
+* **Stripe Webhooks & Idempotency**: Signature verification on raw payload bytes, duplicate event rejection (`already_processed`), stock decrementing on `payment_intent.succeeded`.
+* **Inventory Consistency**: Concurrency-safe atomic decrements, oversell rejection (`InsufficientStockException`), inventory restoration on cancelled orders.
+* **Integrations**: Spotify URI parsing, iTunes preview normalization, graceful fallback when metadata is partially missing.
 
 ---
 
-## 7. Database Seeding
+## 12. Technical Challenges & Design Decisions
 
-Run the seed script to populate initial users, sample discount coupons, and catalog items from `data/seed_data.json`:
+### 1. Payment-Inventory Race Conditions
+* **Problem**: In conventional ecommerce architectures, deducting stock upon PaymentIntent creation causes abandoned carts to lock up inventory. Deducting stock only after payment confirmation risks overselling if stock depleted during customer 3DS verification.
+* **Solution**: Otoichi validates stock availability before generating the Stripe PaymentIntent, but only commits the final atomic decrement upon verified receipt of the `payment_intent.succeeded` webhook. Furthermore, atomic conditional updates (`stock_quantity >= requested_quantity`) guarantee that multiple concurrent purchases cannot oversell a vinyl pressing.
 
-```bash
-python -m scripts.seed
-```
+### 2. Webhook Event Idempotency
+* **Problem**: Stripe's webhook infrastructure guarantees at-least-once delivery. Network retries can result in duplicate webhook deliveries for the same payment intent.
+* **Solution**: Inbound events are deduplicated against a persistent `StripeWebhookEvent` collection before execution. If an `event_id` was previously recorded, the server immediately acknowledges with `{"received": true, "status": "already_processed"}` without re-decrementing inventory or re-incrementing coupon counters.
 
-### Seeded Credentials
-- **Admin**: `admin@otoichi.com` / `AdminPassword123!`
-- **Customer**: `customer@otoichi.com` / `CustomerPassword123!`
-- **Coupons**: `VINYL10` (10% off), `SAVE5` ($5.00 off), `VIP20` (20% off)
-
-The seeder is **100% idempotent**; running it repeatedly will never create duplicate artists, albums, tracks, or vinyl products.
-
----
-
-## 8. Running Automated Tests
-
-Run the complete test suite using pytest:
-
-```bash
-pytest -v
-```
-
-Tests run against an isolated in-memory async SQLite database, verifying:
-- Authentication & JWT token lifecycles
-- Role-based authorization & resource ownership checks
-- Catalog querying, multi-attribute filtering, sorting, pagination, and derived `low_stock`
-- Cart operations, guest session tracking, and guest-to-user cart merging
-- Concurrency-safe inventory decrements and oversell prevention
-- Stripe PaymentIntent creation, signature verification, and webhook idempotency
-- Immutable historical price snapshots in orders
-- State transition protections for orders
-- Verified delivered purchase requirements for product reviews
-- Coupon expiration, usage limits, and negative-total boundary conditions
-- Seed script execution and idempotency
+### 3. Dual Catalog Synchronization & Audio Previews
+* **Problem**: Spotify Web API provides rich album metadata but does not offer public 30-second audio stream URLs for non-authenticated web clients.
+* **Solution**: A dual-provider pipeline was engineered: Spotify provides album artwork, tracklists, and canonical ISRC metadata, while the Apple iTunes Search API provides high-bitrate 30-second AAC preview streams.
 
 ---
 
-## 9. API Documentation (Swagger / OpenAPI)
+## 13. Security Practices
 
-FastAPI provides an interactive OpenAPI / Swagger UI at:
-- **Swagger UI**: `http://localhost:8000/docs`
-- **ReDoc UI**: `http://localhost:8000/redoc`
-- **OpenAPI JSON**: `http://localhost:8000/openapi.json`
-
----
-
-## 10. Authentication & Authorization Flow
-
-1. **Register**: `POST /api/v1/auth/register` (body: `email`, `password`, `full_name`)
-2. **Login**: `POST /api/v1/auth/login` (returns `access_token`, `refresh_token`, `expires_in`)
-3. **Authenticated Requests**: Pass header `Authorization: Bearer <access_token>`
-4. **Refresh Token**: `POST /api/v1/auth/refresh` (body: `{"refresh_token": "..."}`)
-5. **Admin Operations**: Any user with `role: "admin"` can access `/api/v1/admin/*` endpoints.
+* **No Plaintext Passwords**: Passwords are cryptographically salted and hashed using Bcrypt.
+* **Zero Card Data on Application Servers**: Otoichi never accepts or logs raw card numbers, expiration dates, or CVC values. All payment credentials enter directly through iframe-isolated Stripe Elements.
+* **HMAC Signature Verification**: Stripe webhook endpoints verify cryptographic signatures against `STRIPE_WEBHOOK_SECRET` before processing.
+* **Role-Based Authorization**: Administrative endpoints (`/api/v1/admin/*`) require explicit JWT role validation (`role == "admin"`).
+* **Sanitized Secrets**: `.env` and sensitive production credentials are strictly excluded from source control via `.gitignore`.
 
 ---
 
-## 11. External Integrations
+## 14. Future Roadmap
 
-### Spotify Integration
-- Authenticates using **Client Credentials flow** (no Spotify user login required).
-- Fetches artist details, album metadata, high-resolution cover art, and complete tracklists with track numbers and durations.
-- Admin sync endpoint: `POST /api/v1/admin/sync` accepts Spotify Album/Track IDs or search queries.
-
-### iTunes Audio Previews
-- Spotify does not provide full 30s preview MP3s for all tracks.
-- When an album or single is imported, `iTunesService` searches `artist + track_title` on `https://itunes.apple.com/search`.
-- If an audio preview is found, it is saved in `itunes_preview_url`.
-- If no match exists, `itunes_preview_url` is stored as `null` without crashing or interrupting the synchronization.
-
-### Stripe Payments & Webhooks
-- `POST /api/v1/checkout/create-intent`: Computes order subtotal, flat-rate shipping ($5.00), and coupon discounts to create a Stripe PaymentIntent in test mode.
-- `POST /api/v1/webhooks/stripe`:
-  1. Validates `stripe-signature` header using `STRIPE_WEBHOOK_SECRET`.
-  2. Ensures idempotency by recording `event_id` in `stripe_webhook_events`. Duplicate deliveries are ignored.
-  3. On `payment_intent.succeeded`: Locks stock transactionally, creates the order with price snapshots, marks status `paid`, and increments coupon usage atomically.
+- [ ] Automated transactional email notifications (order receipt, shipment tracking number) via Resend / SendGrid.
+- [ ] Integration with carrier shipping APIs (EasyPost / Shippo) for live real-time rate calculation and tracking label generation.
+- [ ] Direct automated refund processing via Stripe Refund API triggered from the admin dashboard.
+- [ ] User review photo uploads with cloud storage integration (AWS S3 / Cloudinary).
+- [ ] High-fidelity audio waveforms for track previews using Web Audio API.
 
 ---
 
-## 12. Frontend Developer Handoff Guide
+## 15. License
 
-When building the Phase 2 frontend, adhere to the following contracts:
-
-### Base URL & Endpoints
-- **API Base URL**: `http://localhost:8000/api/v1`
-- **Error Format**: All errors return a uniform structure:
-  ```json
-  {
-    "error": {
-      "code": "INSUFFICIENT_STOCK",
-      "message": "Only 2 units available for SKU VINYL-ALBUM-01",
-      "details": { "available_stock": 2, "requested": 5 }
-    }
-  }
-  ```
-
-### Guest vs. Authenticated Carts
-- **Guest Users**: Generate a UUID string for the session and pass it in the `X-Session-ID` header on all `/api/v1/cart/*` requests.
-- **Login / Register Transition**: After a guest logs in or registers, make a single call to `POST /api/v1/cart/merge` with `{"guest_session_id": "<UUID>"}` to transfer all guest items into their authenticated cart.
-
-### Derived `low_stock` Field
-- Products include a computed boolean `low_stock: true` when `stock_quantity <= 5`. Frontend can use this to display *"Only X items left!"* badges without hardcoding inventory thresholds.
-
-### Checkout Flow
-1. Call `POST /api/v1/checkout/create-intent` with `{ "coupon_code": "...", "shipping_address_id": "..." }`.
-2. Receive `client_secret` and initialize Stripe Elements on the frontend.
-3. Confirm payment with Stripe.js using `stripe.confirmCardPayment(client_secret, ...)`.
-4. Stripe sends the verified webhook to `/api/v1/webhooks/stripe`, which creates and confirms the order.
-
----
-
-## 13. Known Limitations & Out of Scope
-
-- **Tax Calculation**: Automated sales tax / VAT calculation is excluded; prices are gross/net as configured.
-- **Dynamic Shipping Rates**: Flat-rate shipping ($5.00 default) is applied rather than dynamic carrier rate APIs.
-- **Audio Previews**: Audio previews rely on the iTunes Search API (30-second AAC streams) as Spotify deprecated public 30s preview streams.
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
