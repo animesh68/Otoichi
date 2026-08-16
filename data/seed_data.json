@@ -1,0 +1,169 @@
+[
+  {
+    "type": "album",
+    "artist_name": "Fleetwood Mac",
+    "title": "Rumours",
+    "release_year": 1977,
+    "genre": "Classic Rock, Pop Rock",
+    "description": "Rumours is the eleventh studio album by British-American rock band Fleetwood Mac, released on 4 February 1977 by Warner Bros. Records.",
+    "cover_art_url": "https://upload.wikimedia.org/wikipedia/en/f/fb/FMacRumours.PNG",
+    "label": "Warner Bros.",
+    "spotify_album_id": "1bt6q2S3ALiMIHGZv7Z0va",
+    "spotify_artist_id": "08GQAI4eElDnROBrJRGE0X",
+    "price": 34.99,
+    "stock_quantity": 25,
+    "format": "LP",
+    "vinyl_variant": "standard",
+    "sku": "VINYL-ALBUM-RUMOURS-01",
+    "tracks": [
+      {
+        "track_number": 1,
+        "title": "Second Hand News",
+        "duration_ms": 163000,
+        "spotify_track_id": "06WbPT8ho4G019Al817v0r",
+        "itunes_preview_url": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/44/92/79/44927952-f38b-b892-7472-3dc3c8e4d3a0/mzaf_17208169176378415174.plus.aac.p.m4a"
+      },
+      {
+        "track_number": 2,
+        "title": "Dreams",
+        "duration_ms": 257000,
+        "spotify_track_id": "0ofHAoxe9vBkTCp2UQIavz",
+        "itunes_preview_url": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/80/e7/88/80e788bc-38fb-9b2f-7c15-46eb6179b5c3/mzaf_10526019159932785501.plus.aac.p.m4a"
+      },
+      {
+        "track_number": 3,
+        "title": "Never Going Back Again",
+        "duration_ms": 134000,
+        "spotify_track_id": "19NKCeqgI5rI7pG7rPZp9T",
+        "itunes_preview_url": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/e5/26/d2/e526d2ec-dfb9-b883-911e-b8d9600a98f4/mzaf_15082190898492067784.plus.aac.p.m4a"
+      },
+      {
+        "track_number": 4,
+        "title": "Don't Stop",
+        "duration_ms": 193000,
+        "spotify_track_id": "3CPeWk23MffXv5iH0aB72Y",
+        "itunes_preview_url": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/b8/08/94/b80894fe-b2a6-3023-fa91-667375a0ea17/mzaf_16238692892994018868.plus.aac.p.m4a"
+      },
+      {
+        "track_number": 5,
+        "title": "Go Your Own Way",
+        "duration_ms": 218000,
+        "spotify_track_id": "4xh7WzK249Q6CdT65fE99C",
+        "itunes_preview_url": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/44/14/d0/4414d0ea-e057-a9a7-96a9-8588523c93ee/mzaf_11306354316719878201.plus.aac.p.m4a"
+      },
+      {
+        "track_number": 6,
+        "title": "Songbird",
+        "duration_ms": 200000,
+        "spotify_track_id": "6rGqj24hP3q3aUj5x9bA0r",
+        "itunes_preview_url": null
+      },
+      {
+        "track_number": 7,
+        "title": "The Chain",
+        "duration_ms": 268000,
+        "spotify_track_id": "5e9TFT0U3C2CPw6t9409nl",
+        "itunes_preview_url": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/4c/76/34/4c7634f1-6cf1-a08a-211f-e8b233a0bece/mzaf_677764831631557088.plus.aac.p.m4a"
+      }
+    ]
+  },
+  {
+    "type": "album",
+    "artist_name": "Radiohead",
+    "title": "OK Computer",
+    "release_year": 1997,
+    "genre": "Alternative Rock, Art Rock",
+    "description": "OK Computer is the third studio album by English rock band Radiohead, released on 21 May 1997 on Parlophone and Capitol Records.",
+    "cover_art_url": "https://upload.wikimedia.org/wikipedia/en/b/ba/Radioheadokcomputer.png",
+    "label": "Parlophone",
+    "spotify_album_id": "6dVIqQ8qmQ5GBn99ShneY1",
+    "spotify_artist_id": "4Z8W4fKeB5YxbusRsdQVPb",
+    "price": 39.99,
+    "stock_quantity": 18,
+    "format": "LP",
+    "vinyl_variant": "colored",
+    "sku": "VINYL-ALBUM-OKCOMPUTER-01",
+    "tracks": [
+      {
+        "track_number": 1,
+        "title": "Airbag",
+        "duration_ms": 284000,
+        "spotify_track_id": "62Kz4bQ9x5iZ43bJ3n4V6a",
+        "itunes_preview_url": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/58/61/1b/58611b40-692b-8a7e-ca71-9c88456201b1/mzaf_10034608354714659021.plus.aac.p.m4a"
+      },
+      {
+        "track_number": 2,
+        "title": "Paranoid Android",
+        "duration_ms": 383000,
+        "spotify_track_id": "6LgJvl0Xdtc73RJ1mmpotq",
+        "itunes_preview_url": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/bf/19/2f/bf192f15-bc44-593b-e069-42b7bc4c5ce4/mzaf_6579201974640166099.plus.aac.p.m4a"
+      },
+      {
+        "track_number": 3,
+        "title": "Subterranean Homesick Alien",
+        "duration_ms": 267000,
+        "spotify_track_id": "2cE4f7Y631U5K5B3f2N7gH",
+        "itunes_preview_url": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/05/92/79/059279ea-0f81-5407-3d92-2dc01b7a2d48/mzaf_17208169176378415174.plus.aac.p.m4a"
+      },
+      {
+        "track_number": 4,
+        "title": "Exit Music (For a Film)",
+        "duration_ms": 264000,
+        "spotify_track_id": "0z1btr87JDT99xY2U7P0aQ",
+        "itunes_preview_url": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/44/12/34/441234ea-0f81-5407-3d92-2dc01b7a2d48/mzaf_17208169176378415174.plus.aac.p.m4a"
+      },
+      {
+        "track_number": 5,
+        "title": "Karma Police",
+        "duration_ms": 261000,
+        "spotify_track_id": "63OQupATfueCGZGnWK9CpL",
+        "itunes_preview_url": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/b8/b1/79/b8b179ea-0f81-5407-3d92-2dc01b7a2d48/mzaf_17208169176378415174.plus.aac.p.m4a"
+      },
+      {
+        "track_number": 6,
+        "title": "No Surprises",
+        "duration_ms": 228000,
+        "spotify_track_id": "6b2oQwSGFkzsMtQruIWfdQ",
+        "itunes_preview_url": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/64/12/99/641299ea-0f81-5407-3d92-2dc01b7a2d48/mzaf_17208169176378415174.plus.aac.p.m4a"
+      }
+    ]
+  },
+  {
+    "type": "single",
+    "artist_name": "Steely Dan",
+    "title": "Peg",
+    "release_year": 1977,
+    "genre": "Jazz Rock, Yacht Rock",
+    "description": "Peg is a song by American rock group Steely Dan, first released on the 1977 album Aja and later issued as a standalone single.",
+    "cover_art_url": "https://upload.wikimedia.org/wikipedia/en/e/e0/Steely_Dan_-_Peg.jpg",
+    "label": "ABC Records",
+    "spotify_track_id": "1kurgpX2m07Xz93s07L1F0",
+    "spotify_artist_id": "6PAt550uhMg6xPnMkZ6Qtn",
+    "duration_ms": 237000,
+    "itunes_preview_url": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/31/52/63/315263fe-89c6-11f8-9a4f-56f8f533a1e9/mzaf_14022838977114674720.plus.aac.p.m4a",
+    "price": 14.99,
+    "stock_quantity": 30,
+    "format": "7\"",
+    "vinyl_variant": "standard",
+    "sku": "VINYL-SINGLE-PEG-01"
+  },
+  {
+    "type": "single",
+    "artist_name": "Fela Kuti",
+    "title": "Zombie",
+    "release_year": 1976,
+    "genre": "Afrobeat, Funk",
+    "description": "Zombie is a studio album and landmark title track by Nigerian Afrobeat musician and activist Fela Kuti.",
+    "cover_art_url": "https://upload.wikimedia.org/wikipedia/en/a/ab/Fela_Kuti_-_Zombie.jpg",
+    "label": "Coconut Records",
+    "spotify_track_id": "4261NfT7s21x8x5iW2p6A3",
+    "spotify_artist_id": "3MZsBdqDrRTJjpED6hhL78",
+    "duration_ms": 745000,
+    "itunes_preview_url": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/77/88/99/778899fe-1234-5678-9abc-def012345678/mzaf_1234567890123456789.plus.aac.p.m4a",
+    "price": 16.99,
+    "stock_quantity": 12,
+    "format": "12\"",
+    "vinyl_variant": "splatter",
+    "sku": "VINYL-SINGLE-ZOMBIE-01"
+  }
+]
