@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     FREE_SHIPPING_THRESHOLD: float = 100.00
 
     # CORS
-    CORS_ORIGINS: Union[List[str], str] = ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:5173"]
+    CORS_ORIGINS: Union[List[str], str] = ["*"]
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
@@ -45,7 +45,7 @@ class Settings(BaseSettings):
             return [i.strip() for i in v.split(",") if i.strip()]
         elif isinstance(v, list):
             return v
-        return []
+        return ["*"]
 
     model_config = SettingsConfigDict(
         env_file=".env",
