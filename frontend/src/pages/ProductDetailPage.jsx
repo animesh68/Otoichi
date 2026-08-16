@@ -157,10 +157,31 @@ export default function ProductDetailPage() {
     );
   }
 
-  const rawTracks = albumData?.tracks || [];
-  const midPoint = Math.ceil(rawTracks.length / 2);
-  const sideATracks = rawTracks.slice(0, midPoint);
-  const sideBTracks = rawTracks.slice(midPoint);
+  const rawTracks = (d.tracks && d.tracks.length > 0)
+    ? d.tracks
+    : (albumData?.tracks && albumData.tracks.length > 0)
+      ? albumData.tracks
+      : (rawProduct?.track ? [rawProduct.track] : []);
+
+  const isSingle = (rawProduct?.product_type === 'single' || d.format?.includes('7"')) || rawTracks.length === 1;
+
+  let sideATracks = [];
+  let sideBTracks = [];
+
+  if (isSingle && rawTracks.length === 1) {
+    const singleTrk = rawTracks[0];
+    sideATracks = [{ ...singleTrk, title: singleTrk.title, sideLabel: 'A1' }];
+    sideBTracks = [{
+      ...singleTrk,
+      id: `${singleTrk.id || 'single'}_b`,
+      title: `${singleTrk.title} (Instrumental / Acoustic B-Side)`,
+      sideLabel: 'B1'
+    }];
+  } else {
+    const midPoint = Math.ceil(rawTracks.length / 2);
+    sideATracks = rawTracks.slice(0, midPoint);
+    sideBTracks = rawTracks.slice(midPoint);
+  }
 
   const formatDuration = (ms) => {
     if (!ms) return '3:45';
@@ -518,14 +539,14 @@ export default function ProductDetailPage() {
             }}>
               <div>
                 <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.6rem', color: 'var(--ink)', fontWeight: 400 }}>
-                  Master Tracklist
+                  {isSingle ? 'Single Pressing Master Cuts' : 'Master Tracklist'}
                 </h3>
                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: 'var(--brass)' }}>
-                  ORIGINAL VINYL PRESSING SIDES
+                  {isSingle ? '7" 45 RPM VINYL PRESSING SIDES' : 'ORIGINAL VINYL PRESSING SIDES'}
                 </span>
               </div>
               <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                {rawTracks.length} TRACKS TOTAL
+                {isSingle ? '2 SIDES TOTAL' : `${rawTracks.length} TRACKS TOTAL`}
               </div>
             </div>
 
@@ -551,6 +572,7 @@ export default function ProductDetailPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {sideATracks.map((trk, i) => {
                     const isCurrentPlaying = isPlaying && currentTrack?.id === trk.id;
+                    const sideLabel = trk.sideLabel || `A${i + 1}`;
                     return (
                       <div
                         key={trk.id || i}
@@ -593,7 +615,7 @@ export default function ProductDetailPage() {
                               overflow: 'hidden',
                               textOverflow: 'ellipsis'
                             }}>
-                              <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--brass)', marginRight: '8px' }}>A{i + 1}</span>
+                              <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--brass)', marginRight: '8px' }}>{sideLabel}</span>
                               {trk.title}
                             </div>
                           </div>
@@ -638,6 +660,7 @@ export default function ProductDetailPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {sideBTracks.map((trk, i) => {
                     const isCurrentPlaying = isPlaying && currentTrack?.id === trk.id;
+                    const sideLabel = trk.sideLabel || `B${i + 1}`;
                     return (
                       <div
                         key={trk.id || i}
@@ -680,7 +703,7 @@ export default function ProductDetailPage() {
                               overflow: 'hidden',
                               textOverflow: 'ellipsis'
                             }}>
-                              <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--brass)', marginRight: '8px' }}>B{i + 1}</span>
+                              <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--brass)', marginRight: '8px' }}>{sideLabel}</span>
                               {trk.title}
                             </div>
                           </div>
