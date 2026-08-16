@@ -98,21 +98,28 @@ export const CheckoutService = {
     });
   },
 
-  directOrder: async (orderData) => {
-    return apiRequest('/checkout/direct-order', {
+  getSummary: async (payload = {}) => {
+    return apiRequest('/checkout/summary', {
       method: 'POST',
-      body: JSON.stringify(orderData)
+      body: JSON.stringify(payload)
     });
   },
 
-  createIntent: async (payload) => {
+  createIntent: async (payload = {}) => {
     return apiRequest('/checkout/create-intent', {
       method: 'POST',
       body: JSON.stringify(payload)
     });
   },
 
-  completeCheckout: async (payload) => {
+  createZeroTotalOrder: async (payload = {}) => {
+    return apiRequest('/checkout/zero-total-order', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  completeCheckout: async (payload = {}) => {
     return apiRequest('/checkout/complete', {
       method: 'POST',
       body: JSON.stringify(payload)

@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import logging
 import uuid
 from typing import Any, Dict
@@ -20,11 +21,12 @@ async def stripe_webhook(
     stripe_signature: str = Header(None, alias="stripe-signature"),
 ):
     """
-    Handle Stripe webhook events with signature verification and idempotency protection.
+    Handle Stripe webhook events with raw payload signature verification and event idempotency.
+    Authoritatively fulfills orders, updates inventory, commits coupons, and persists state transitions.
     """
     payload_bytes = await request.body()
 
-    # 1. Verify webhook signature
+    # 1. Verify webhook signature using raw body bytes
     event = payment_service.verify_webhook_signature(
         payload=payload_bytes,
         signature_header=stripe_signature or "",
@@ -36,7 +38,7 @@ async def stripe_webhook(
     if not event_id:
         return {"received": False, "error": "Missing event id"}
 
-    # 2. Check Idempotency
+    # 2. Check Idempotency - Ignore already-processed events safely
     existing_event = await StripeWebhookEvent.find_one(StripeWebhookEvent.event_id == event_id)
     if existing_event:
         logger.info(f"Stripe event {event_id} already processed. Skipping.")
@@ -50,48 +52,70 @@ async def stripe_webhook(
     )
     await webhook_record.insert()
 
-    # 4. Process event
+    # 4. Handle event types safely
     event_data = event.get("data", {}).get("object", {})
+    order_service = OrderService()
 
     if event_type == "payment_intent.succeeded":
         payment_intent_id = event_data.get("id")
         metadata = event_data.get("metadata", {})
-        user_id_str = metadata.get("user_id")
+        charges = event_data.get("charges", {}).get("data", [])
+        payment_method_type = "card"
+        if charges and charges[0].get("payment_method_details"):
+            payment_method_type = charges[0]["payment_method_details"].get("type", "card")
 
-        if user_id_str:
-            try:
-                user_id = uuid.UUID(user_id_str)
-                user = await User.find_one(User.id == user_id)
+        logger.info(f"Processing payment_intent.succeeded for {payment_intent_id}")
+        await order_service.fulfill_paid_order(
+            payment_intent_id=payment_intent_id,
+            payment_method_type=payment_method_type,
+            metadata=metadata,
+        )
 
-                if user:
-                    existing_order = await Order.find_one(Order.stripe_payment_intent_id == payment_intent_id)
-                    if existing_order:
-                        if existing_order.status == "pending":
-                            existing_order.status = "paid"
-                            await existing_order.save()
-                    else:
-                        shipping_addr_id_str = metadata.get("shipping_address_id")
-                        shipping_addr_id = uuid.UUID(shipping_addr_id_str) if shipping_addr_id_str else None
-                        coupon_code = metadata.get("coupon_code") or None
-
-                        order_service = OrderService()
-                        await order_service.create_order_from_cart(
-                            user=user,
-                            shipping_address_id=shipping_addr_id,
-                            coupon_code=coupon_code,
-                            payment_intent_id=payment_intent_id,
-                            status="paid",
-                        )
-            except Exception as e:
-                logger.error(f"Error handling payment_intent.succeeded for {payment_intent_id}: {e}")
-                pass
-
-    elif event_type == "payment_intent.payment_failed":
+    elif event_type == "payment_intent.processing":
         payment_intent_id = event_data.get("id")
         if payment_intent_id:
             order = await Order.find_one(Order.stripe_payment_intent_id == payment_intent_id)
-            if order and order.status == "pending":
-                order.status = "cancelled"
+            if order and order.payment_status != "succeeded":
+                order.payment_status = "processing"
+                order.updated_at = datetime.now(timezone.utc)
                 await order.save()
 
-    return {"received": True}
+    elif event_type in ["payment_intent.payment_failed", "payment_intent.canceled"]:
+        payment_intent_id = event_data.get("id")
+        if payment_intent_id:
+            order = await Order.find_one(Order.stripe_payment_intent_id == payment_intent_id)
+            if order and order.payment_status != "succeeded":
+                order.payment_status = "failed" if "failed" in event_type else "cancelled"
+                order.status = "cancelled"
+                order.updated_at = datetime.now(timezone.utc)
+                await order.save()
+                logger.info(f"Marked order {order.id} as {order.payment_status} from {event_type}")
+
+    elif event_type == "charge.refunded":
+        charge_obj = event_data
+        payment_intent_id = charge_obj.get("payment_intent")
+        amount_refunded_cents = charge_obj.get("amount_refunded", 0)
+        amount_refunded = round(amount_refunded_cents / 100.0, 2)
+        refunded = charge_obj.get("refunded", False)
+
+        if payment_intent_id:
+            order = await Order.find_one(Order.stripe_payment_intent_id == payment_intent_id)
+            if order:
+                now = datetime.now(timezone.utc)
+                order.amount_refunded = amount_refunded
+                order.refunded_at = now
+                if refunded or amount_refunded >= order.total_amount:
+                    order.payment_status = "refunded"
+                    order.status = "refunded"
+                else:
+                    order.payment_status = "partially_refunded"
+                order.updated_at = now
+                await order.save()
+                logger.info(f"Processed refund for order {order.id}: ${amount_refunded}")
+
+    elif event_type == "charge.dispute.created":
+        dispute = event_data
+        charge_id = dispute.get("charge")
+        logger.warning(f"Dispute opened on Stripe charge {charge_id}!")
+
+    return {"received": True, "event_id": event_id, "type": event_type}

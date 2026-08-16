@@ -27,11 +27,13 @@ class Settings(BaseSettings):
     STRIPE_SECRET_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
     STRIPE_CURRENCY: str = "usd"
+    ALLOW_MOCK_PAYMENTS: bool = True
 
     # Business Rules
     LOW_STOCK_THRESHOLD: int = 5
     DEFAULT_CURRENCY: str = "USD"
-    FLAT_SHIPPING_RATE: float = 5.00
+    FLAT_SHIPPING_RATE: float = 7.50
+    FREE_SHIPPING_THRESHOLD: float = 100.00
 
     # CORS
     CORS_ORIGINS: Union[List[str], str] = ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:5173"]

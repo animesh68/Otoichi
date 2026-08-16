@@ -16,6 +16,7 @@ class BasePaymentService(ABC):
         amount: float,
         currency: str = "usd",
         metadata: Optional[Dict[str, Any]] = None,
+        idempotency_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create a payment intent / charge request with the payment provider."""
         pass
@@ -34,6 +35,7 @@ class StripePaymentService(BasePaymentService):
     def __init__(self):
         self.secret_key = settings.STRIPE_SECRET_KEY
         self.webhook_secret = settings.STRIPE_WEBHOOK_SECRET
+        self.currency = settings.STRIPE_CURRENCY or "usd"
         if self.secret_key:
             stripe.api_key = self.secret_key
 
@@ -42,19 +44,28 @@ class StripePaymentService(BasePaymentService):
         amount: float,
         currency: str = "usd",
         metadata: Optional[Dict[str, Any]] = None,
+        idempotency_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Create a Stripe PaymentIntent.
+        Create a Stripe PaymentIntent with server-authoritative amount and idempotency protection.
         Amount is converted to lowest denomination (cents for USD).
         """
         amount_cents = int(round(amount * 100))
-        if amount_cents < 50:
-            # Minimum allowed by Stripe
-            amount_cents = 50
+        if amount_cents <= 0:
+            raise BadRequestException(message="Payment amount must be greater than zero")
+
+        # In production, require valid Stripe credentials
+        if settings.ENVIRONMENT == "production" and not self.secret_key:
+            logger.critical("STRIPE_SECRET_KEY is not configured in production environment.")
+            raise PaymentFailedException(message="Payment gateway configuration error")
 
         if not self.secret_key:
-            # Mock payment intent for dev/testing when Stripe key is not set
-            mock_id = f"pi_mock_{amount_cents}_{metadata.get('user_id', 'anon') if metadata else 'anon'}"
+            if not settings.ALLOW_MOCK_PAYMENTS:
+                raise PaymentFailedException(message="Stripe credentials are missing and mock mode is disabled")
+            
+            # Explicit local development / test mock intent
+            mock_id = f"pi_mock_{amount_cents}_{idempotency_key or 'dev'}"
+            logger.info("Using development mock Stripe PaymentIntent (no STRIPE_SECRET_KEY configured).")
             return {
                 "id": mock_id,
                 "client_secret": f"{mock_id}_secret_mock",
@@ -64,12 +75,23 @@ class StripePaymentService(BasePaymentService):
             }
 
         try:
-            intent = stripe.PaymentIntent.create(
-                amount=amount_cents,
-                currency=currency.lower(),
-                metadata=metadata or {},
-                automatic_payment_methods={"enabled": True},
-            )
+            # Clean and sanitize metadata - never include sensitive information
+            safe_metadata = {}
+            if metadata:
+                for k, v in metadata.items():
+                    if v is not None:
+                        safe_metadata[str(k)] = str(v)[:500]
+
+            kwargs: Dict[str, Any] = {
+                "amount": amount_cents,
+                "currency": currency.lower(),
+                "metadata": safe_metadata,
+                "automatic_payment_methods": {"enabled": True},
+            }
+            if idempotency_key:
+                kwargs["idempotency_key"] = idempotency_key
+
+            intent = stripe.PaymentIntent.create(**kwargs)
             return {
                 "id": intent.id,
                 "client_secret": intent.client_secret,
@@ -78,10 +100,10 @@ class StripePaymentService(BasePaymentService):
                 "status": intent.status,
             }
         except stripe.StripeError as e:
-            logger.error(f"Stripe PaymentIntent creation failed: {e}")
-            raise PaymentFailedException(message=f"Stripe error: {str(e)}")
+            logger.error(f"Stripe PaymentIntent creation failed: {e.__class__.__name__}")
+            raise PaymentFailedException(message=f"Stripe error: {getattr(e, 'user_message', str(e))}")
         except Exception as e:
-            logger.error(f"Unexpected error in payment service: {e}")
+            logger.error(f"Unexpected error in Stripe payment service: {e}")
             raise PaymentFailedException(message="Could not initialize payment")
 
     def verify_webhook_signature(
@@ -90,11 +112,14 @@ class StripePaymentService(BasePaymentService):
         signature_header: str,
     ) -> Dict[str, Any]:
         """
-        Verify Stripe webhook signature header.
-        Raises BadRequestException if invalid.
+        Verify Stripe webhook signature header using raw payload bytes.
         """
         if not self.webhook_secret:
-            # In local test/mock mode if webhook secret is not set, parse payload directly
+            if settings.ENVIRONMENT == "production":
+                logger.critical("STRIPE_WEBHOOK_SECRET is not configured in production.")
+                raise BadRequestException(code="WEBHOOK_CONFIG_ERROR", message="Webhook secret not configured")
+            
+            # Dev / test mode fallback
             import json
             try:
                 return json.loads(payload.decode("utf-8"))

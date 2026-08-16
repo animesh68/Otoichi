@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Lock, ShieldCheck, CreditCard } from 'lucide-react';
+import { Elements } from '@stripe/react-stripe-js';
+import { Lock, ShieldCheck, Tag, Disc, AlertCircle, ArrowLeft } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import { CheckoutService } from '../api/services';
+import { stripePromise } from '../api/stripeClient';
+import StripeCheckoutForm from '../components/StripeCheckoutForm';
 import { getProductDisplay } from '../utils/productHelper';
 import confetti from 'canvas-confetti';
 
@@ -22,36 +25,71 @@ export default function CheckoutPage() {
   const [formData, setFormData] = useState({
     email: user?.email || '',
     full_name: user?.full_name || '',
-    street: '12-4 Shibuya Dogenzaka',
-    city: 'Tokyo',
-    state: 'Tokyo',
-    postal_code: '150-0043',
-    country: 'Japan',
-    card_number: '4242 •••• •••• 4242',
-    card_exp: '12/28',
-    card_cvc: '888'
+    street: '742 Evergreen Terrace',
+    city: 'Springfield',
+    state: 'OR',
+    postal_code: '97477',
+    country: 'United States',
   });
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [errorMsg, setErrorMsg] = useState(null);
+  const [summary, setSummary] = useState(null);
+  const [clientSecret, setClientSecret] = useState(null);
+  const [paymentIntentId, setPaymentIntentId] = useState(null);
+  const [checkoutId, setCheckoutId] = useState(null);
+  const [isZeroTotal, setIsZeroTotal] = useState(false);
+  const [isMockMode, setIsMockMode] = useState(false);
+  const [loadingIntent, setLoadingIntent] = useState(true);
+  const [initError, setInitError] = useState(null);
 
   const items = cart?.items || [];
-  const subtotal = items.reduce((sum, item) => {
-    const d = getProductDisplay(item);
-    return sum + (d.price * (item.quantity || 1));
-  }, 0);
 
-  let discountAmount = 0;
-  if (coupon) {
-    if (coupon.discount_percent) {
-      discountAmount = (subtotal * coupon.discount_percent) / 100;
-    } else if (coupon.discount_amount) {
-      discountAmount = coupon.discount_amount;
+  // Fetch authoritative pricing breakdown and create PaymentIntent
+  useEffect(() => {
+    async function initCheckout() {
+      if (items.length === 0) {
+        setLoadingIntent(false);
+        return;
+      }
+
+      setLoadingIntent(true);
+      setInitError(null);
+
+      try {
+        const intentRes = await CheckoutService.createIntent({
+          coupon_code: coupon?.code || undefined,
+          guest_email: formData.email || undefined,
+        });
+
+        setSummary({
+          subtotal: intentRes.subtotal,
+          shipping: intentRes.shipping,
+          discount: intentRes.discount,
+          total: intentRes.total,
+          currency: intentRes.currency,
+        });
+        setCheckoutId(intentRes.checkout_id);
+        setIsZeroTotal(intentRes.is_zero_total);
+
+        if (intentRes.is_zero_total) {
+          setClientSecret(null);
+          setPaymentIntentId(null);
+        } else {
+          setClientSecret(intentRes.client_secret);
+          setPaymentIntentId(intentRes.payment_intent_id);
+          if (!intentRes.client_secret || intentRes.client_secret.includes('secret_mock')) {
+            setIsMockMode(true);
+          }
+        }
+      } catch (err) {
+        console.error('Error initializing checkout payment:', err);
+        setInitError(err.message || 'Could not calculate checkout totals. Please verify stock.');
+      } finally {
+        setLoadingIntent(false);
+      }
     }
-  }
 
-  const shipping = subtotal > 100 || subtotal === 0 ? 0 : 7.50;
-  const total = Math.max(0, subtotal - discountAmount + shipping);
+    initCheckout();
+  }, [coupon, items.length]);
 
   const handleInputChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -73,32 +111,21 @@ export default function CheckoutPage() {
     }
   };
 
-  const handlePlaceOrder = async (e) => {
-    e.preventDefault();
-    if (items.length === 0) {
-      navigate('/browse');
-      return;
-    }
-
-    setIsSubmitting(true);
-    setErrorMsg(null);
-
+  const handleZeroTotalCheckout = async () => {
     try {
-      const orderPayload = {
-        email: formData.email || user?.email || 'guest@otoichi.com',
-        shipping_address: {
-          full_name: formData.full_name || 'Collector',
-          street: formData.street,
+      setLoadingIntent(true);
+      const order = await CheckoutService.createZeroTotalOrder({
+        coupon_code: coupon?.code || '',
+        new_shipping_address: {
+          line1: formData.street,
           city: formData.city,
           state: formData.state,
           postal_code: formData.postal_code,
-          country: formData.country
-        },
-        coupon_code: coupon?.code || null
-      };
+          country: formData.country,
+          phone: '',
+        }
+      });
 
-      const res = await CheckoutService.directOrder(orderPayload);
-      
       try {
         confetti({
           particleCount: 80,
@@ -109,20 +136,83 @@ export default function CheckoutPage() {
       } catch (e) {}
 
       await clearCart();
-      navigate('/order-success', { state: { order: res, items, total } });
+      navigate('/order-success', {
+        state: {
+          order: order,
+          items: items,
+          total: 0.0
+        }
+      });
     } catch (err) {
-      console.error('Order checkout error:', err);
-      setErrorMsg(err.message || 'Checkout failed. Please check stock and try again.');
+      setInitError(err.message || 'Zero-total checkout failed');
     } finally {
-      setIsSubmitting(false);
+      setLoadingIntent(false);
     }
   };
+
+  // Stripe theme customization matching Otoichi dark/brass palette
+  const stripeAppearance = {
+    theme: 'night',
+    variables: {
+      colorPrimary: '#C89B3C',
+      colorBackground: '#1C1814',
+      colorText: '#F3ECDD',
+      colorDanger: '#F38A8A',
+      fontFamily: 'Instrument Sans, sans-serif',
+      spacingUnit: '4px',
+      borderRadius: '6px',
+    },
+    rules: {
+      '.Input': {
+        backgroundColor: '#2A241E',
+        border: '1px solid #3A342C',
+        color: '#F3ECDD',
+        boxShadow: 'none',
+      },
+      '.Input:focus': {
+        borderColor: '#C89B3C',
+        boxShadow: '0 0 0 1px #C89B3C',
+      },
+      '.Label': {
+        color: '#A89E90',
+        fontSize: '0.8rem',
+        textTransform: 'uppercase',
+        letterSpacing: '0.04em',
+      },
+      '.Tab': {
+        backgroundColor: '#2A241E',
+        borderColor: '#3A342C',
+        color: '#A89E90',
+      },
+      '.Tab--selected': {
+        borderColor: '#C89B3C',
+        color: '#F3ECDD',
+        backgroundColor: '#1C1814',
+      }
+    }
+  };
+
+  if (items.length === 0) {
+    return (
+      <div className="container" style={{ textAlign: 'center', padding: '100px 24px', minHeight: '60vh' }}>
+        <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '2rem', color: 'var(--ink)', marginBottom: '16px' }}>
+          Your Crate is Empty
+        </h2>
+        <p style={{ color: 'var(--text-muted)', marginBottom: '24px' }}>
+          Add vinyl pressings to your crate before checking out.
+        </p>
+        <Link to="/browse" className="btn-brass">
+          Browse Record Crates
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div style={{ backgroundColor: 'var(--bg)', minHeight: '100vh', padding: '40px 0 100px' }}>
       <div className="container">
         
-        {/* Header */}
+        {/* Top Breadcrumb & Header */}
         <div style={{
           display: 'flex',
           alignItems: 'baseline',
@@ -135,14 +225,11 @@ export default function CheckoutPage() {
             <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '2.2rem', color: 'var(--ink)', fontWeight: 400 }}>
               Checkout
             </h1>
-            <span style={{ fontFamily: 'var(--font-script)', color: 'var(--brass)', fontSize: '1.4rem' }}>
-              決済
-            </span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#79D49B', fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
             <ShieldCheck size={16} />
-            <span>Secure 256-Bit SSL</span>
+            <span>Stripe 256-Bit SSL Encrypted</span>
           </div>
         </div>
 
@@ -153,10 +240,10 @@ export default function CheckoutPage() {
           alignItems: 'start'
         }}>
           
-          {/* Left Column: Shipping & Payment Form */}
+          {/* Left Column: Contact, Shipping Address & Stripe Payment Element */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
             
-            {/* Account / Guest Section */}
+            {/* 1. Contact Info Section */}
             <div style={{
               backgroundColor: 'var(--bg-card)',
               border: '1px solid var(--taupe-border)',
@@ -262,7 +349,7 @@ export default function CheckoutPage() {
               )}
             </div>
 
-            {/* Shipping Address Section */}
+            {/* 2. Shipping Address Section */}
             <div style={{
               backgroundColor: 'var(--bg-card)',
               border: '1px solid var(--taupe-border)',
@@ -356,7 +443,7 @@ export default function CheckoutPage() {
               </div>
             </div>
 
-            {/* Payment Details Section */}
+            {/* 3. Stripe Payment Element Section */}
             <div style={{
               backgroundColor: 'var(--bg-card)',
               border: '1px solid var(--taupe-border)',
@@ -365,91 +452,82 @@ export default function CheckoutPage() {
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                 <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.15rem', color: 'var(--ink)' }}>
-                  3. Payment Method
+                  3. Payment Details
                 </h3>
                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: 'var(--brass)' }}>
-                  Stripe Test Mode Enabled
+                  Powered by Stripe
                 </span>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {loadingIntent ? (
                 <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  backgroundColor: 'var(--taupe)',
-                  border: '1px solid var(--taupe-border)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '12px 16px'
+                  padding: '32px',
+                  textAlign: 'center',
+                  color: 'var(--text-muted)',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '0.85rem'
                 }}>
-                  <CreditCard size={18} color="var(--brass)" style={{ marginRight: '12px' }} />
-                  <input
-                    type="text"
-                    name="card_number"
-                    value={formData.card_number}
-                    onChange={handleInputChange}
-                    style={{ background: 'none', border: 'none', color: 'var(--ink)', fontFamily: 'var(--font-mono)', width: '100%' }}
-                  />
+                  <Disc size={28} color="var(--brass)" style={{ animation: 'spinSlow 1.5s linear infinite', margin: '0 auto 10px' }} />
+                  <div>Initializing secure Stripe checkout...</div>
                 </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-                  <input
-                    type="text"
-                    name="card_exp"
-                    value={formData.card_exp}
-                    onChange={handleInputChange}
-                    style={{
-                      padding: '12px 16px',
-                      backgroundColor: 'var(--taupe)',
-                      border: '1px solid var(--taupe-border)',
-                      borderRadius: 'var(--radius-md)',
-                      color: 'var(--ink)',
-                      fontFamily: 'var(--font-mono)'
-                    }}
-                  />
-                  <input
-                    type="text"
-                    name="card_cvc"
-                    value={formData.card_cvc}
-                    onChange={handleInputChange}
-                    style={{
-                      padding: '12px 16px',
-                      backgroundColor: 'var(--taupe)',
-                      border: '1px solid var(--taupe-border)',
-                      borderRadius: 'var(--radius-md)',
-                      color: 'var(--ink)',
-                      fontFamily: 'var(--font-mono)'
-                    }}
-                  />
+              ) : initError ? (
+                <div style={{
+                  backgroundColor: 'rgba(140, 47, 47, 0.18)',
+                  border: '1px solid var(--seal)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '14px',
+                  color: '#F38A8A',
+                  fontSize: '0.85rem'
+                }}>
+                  {initError}
                 </div>
-              </div>
+              ) : isZeroTotal ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{
+                    backgroundColor: 'rgba(200, 155, 60, 0.15)',
+                    border: '1px solid var(--brass)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '14px',
+                    color: 'var(--ink)',
+                    fontSize: '0.88rem'
+                  }}>
+                    🎉 100% Promotional Discount Applied! Your total amount is <strong>$0.00</strong>. No card payment required.
+                  </div>
+                  <button
+                    onClick={handleZeroTotalCheckout}
+                    className="btn-brass"
+                    style={{ width: '100%', padding: '16px', fontSize: '1.05rem' }}
+                  >
+                    <Lock size={18} />
+                    <span>Complete Free Order</span>
+                  </button>
+                </div>
+              ) : (clientSecret && !isMockMode) ? (
+                <Elements stripe={stripePromise} options={{ clientSecret, appearance: stripeAppearance }}>
+                  <StripeCheckoutForm
+                    totalAmount={summary?.total || 0}
+                    currency={summary?.currency || 'USD'}
+                    checkoutId={checkoutId}
+                    customerData={formData}
+                    isMockMode={false}
+                    paymentIntentId={paymentIntentId}
+                  />
+                </Elements>
+              ) : (
+                <StripeCheckoutForm
+                  totalAmount={summary?.total || 0}
+                  currency={summary?.currency || 'USD'}
+                  checkoutId={checkoutId}
+                  customerData={formData}
+                  isMockMode={true}
+                  paymentIntentId={paymentIntentId}
+                />
+              )}
             </div>
 
-            {errorMsg && (
-              <div style={{
-                backgroundColor: 'rgba(140, 47, 47, 0.15)',
-                border: '1px solid var(--seal)',
-                borderRadius: 'var(--radius-md)',
-                padding: '14px',
-                color: '#F38A8A',
-                fontSize: '0.85rem'
-              }}>
-                {errorMsg}
-              </div>
-            )}
-
-            {/* Place Order CTA */}
-            <button
-              onClick={handlePlaceOrder}
-              disabled={isSubmitting}
-              className="btn-brass"
-              style={{ width: '100%', padding: '16px', fontSize: '1.05rem' }}
-            >
-              <Lock size={18} />
-              <span>{isSubmitting ? 'Processing Order...' : `Authorize & Pay $${total.toFixed(2)}`}</span>
-            </button>
           </div>
 
-          {/* Right Column: Order Summary */}
+          {/* Right Column: Authoritative Order Summary Panel */}
           <div style={{
             backgroundColor: 'var(--bg-card)',
             border: '1px solid var(--taupe-border)',
@@ -489,22 +567,32 @@ export default function CheckoutPage() {
             <div style={{ borderTop: '1px solid var(--taupe-border)', paddingTop: '16px', display: 'flex', flexDirection: 'column', gap: '10px', fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--ink-secondary)' }}>
                 <span>Subtotal</span>
-                <span>${subtotal.toFixed(2)}</span>
+                <span>${(summary?.subtotal || 0).toFixed(2)}</span>
               </div>
-              {discountAmount > 0 && (
+              {summary?.discount > 0 && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--brass)' }}>
-                  <span>Discount</span>
-                  <span>-${discountAmount.toFixed(2)}</span>
+                  <span>Promotional Discount ({coupon?.code})</span>
+                  <span>-${(summary?.discount || 0).toFixed(2)}</span>
                 </div>
               )}
               <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--ink-secondary)' }}>
-                <span>Shipping</span>
-                <span>{shipping === 0 ? 'FREE' : `$${shipping.toFixed(2)}`}</span>
+                <span>Rigid Mailer Courier</span>
+                <span>{(summary?.shipping || 0) === 0 ? 'FREE' : `$${(summary?.shipping || 0).toFixed(2)}`}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--ink)', fontSize: '1.15rem', fontWeight: 600, borderTop: '1px solid var(--taupe-border)', paddingTop: '12px' }}>
-                <span>Total</span>
-                <span>${total.toFixed(2)}</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--ink)', fontSize: '1.2rem', fontWeight: 600, borderTop: '1px solid var(--taupe-border)', paddingTop: '12px' }}>
+                <span>Total Amount</span>
+                <span>${(summary?.total || 0).toFixed(2)}</span>
               </div>
+            </div>
+
+            <div style={{
+              textAlign: 'center',
+              marginTop: '20px',
+              fontFamily: 'var(--font-mono)',
+              fontSize: '0.75rem',
+              color: 'var(--text-muted)'
+            }}>
+              🔒 Verified by Stripe 3D Secure
             </div>
           </div>
 

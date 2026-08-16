@@ -29,7 +29,13 @@ from app.schemas.cart import (
     CartResponse,
     CartMergeRequest,
 )
-from app.schemas.checkout import CheckoutRequest, PaymentIntentResponse, CheckoutSummary
+from app.schemas.checkout import (
+    CheckoutRequest,
+    PaymentIntentResponse,
+    CheckoutSummaryResponse,
+    ZeroTotalOrderRequest,
+)
+CheckoutSummary = CheckoutSummaryResponse
 from app.schemas.order import OrderItemResponse, OrderResponse, OrderStatusUpdate
 from app.schemas.social_and_promo import (
     WishlistAdd,
