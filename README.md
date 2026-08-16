@@ -2,13 +2,25 @@
 
 > A full-stack vinyl record marketplace engineered for music discovery, streaming audio previews, and idempotent Stripe payment fulfillment.
 
-![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)
-![React](https://img.shields.io/badge/React_19-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
-![Vite](https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white)
-![Python](https://img.shields.io/badge/Python_3.12+-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![MongoDB](https://img.shields.io/badge/MongoDB_Atlas-47A248?style=for-the-badge&logo=mongodb&logoColor=white)
-![Stripe](https://img.shields.io/badge/Stripe_SDK-626CD9?style=for-the-badge&logo=stripe&logoColor=white)
-![JWT](https://img.shields.io/badge/JWT_Auth-000000?style=for-the-badge&logo=jsonwebtokens&logoColor=white)
+[![Live Demo](https://img.shields.io/badge/Live_Demo-otoichi.vercel.app-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://otoichi.vercel.app/)
+[![API Docs](https://img.shields.io/badge/Swagger_Docs-otoichi.onrender.com-468B62?style=for-the-badge&logo=swagger&logoColor=white)](https://otoichi.onrender.com/docs)
+[![GitHub](https://img.shields.io/badge/GitHub-animesh68%2FOtoichi-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/animesh68/Otoichi)
+
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React_19-20232A?style=flat-square&logo=react&logoColor=61DAFB)
+![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat-square&logo=vite&logoColor=white)
+![Python](https://img.shields.io/badge/Python_3.12+-3776AB?style=flat-square&logo=python&logoColor=white)
+![MongoDB](https://img.shields.io/badge/MongoDB_Atlas-47A248?style=flat-square&logo=mongodb&logoColor=white)
+![Stripe](https://img.shields.io/badge/Stripe_SDK-626CD9?style=flat-square&logo=stripe&logoColor=white)
+![JWT](https://img.shields.io/badge/JWT_Auth-000000?style=flat-square&logo=jsonwebtokens&logoColor=white)
+
+---
+
+### Quick Links
+* **Live Web Application (Vercel)**: [https://otoichi.vercel.app/](https://otoichi.vercel.app/)
+* **Interactive API Documentation (Swagger)**: [https://otoichi.onrender.com/docs](https://otoichi.onrender.com/docs)
+* **Backend REST API (Render)**: [https://otoichi.onrender.com/api/v1](https://otoichi.onrender.com/api/v1)
+* **GitHub Repository**: [https://github.com/animesh68/Otoichi](https://github.com/animesh68/Otoichi)
 
 ---
 
