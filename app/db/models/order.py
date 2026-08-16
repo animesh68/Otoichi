@@ -15,7 +15,8 @@ class OrderItem(BaseModel):
 
 class Order(Document):
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
-    user_id: uuid.UUID = Field(index=True)
+    user_id: Optional[uuid.UUID] = Field(default=None, index=True)
+    customer_email: Optional[str] = Field(default=None, index=True)
     
     # Clean separation: Order lifecycle status vs Payment provider status
     status: str = "pending"  # "pending", "paid", "processing", "shipped", "delivered", "cancelled", "refunded"

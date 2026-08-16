@@ -34,13 +34,21 @@ class OrderService:
 
     async def calculate_checkout_summary(
         self,
-        user_id: uuid.UUID,
+        user_id: Optional[uuid.UUID] = None,
+        session_id: Optional[str] = None,
         coupon_code: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Authoritative server-side price, coupon discount, shipping, and total calculation.
+        Supports both authenticated users and guest cart sessions.
         """
-        cart_items = await CartItem.find(CartItem.user_id == user_id).to_list()
+        if user_id:
+            cart_items = await CartItem.find(CartItem.user_id == user_id).to_list()
+        elif session_id:
+            cart_items = await CartItem.find(CartItem.session_id == session_id).to_list()
+        else:
+            cart_items = []
+
         if not cart_items:
             raise BadRequestException(message="Cannot calculate checkout for an empty cart")
 
@@ -93,7 +101,9 @@ class OrderService:
 
     async def prepare_order_and_items(
         self,
-        user: User,
+        user: Optional[User] = None,
+        session_id: Optional[str] = None,
+        guest_email: Optional[str] = None,
         shipping_address_id: Optional[uuid.UUID] = None,
         shipping_address_data: Optional[Dict[str, Any]] = None,
         coupon_code: Optional[str] = None,
@@ -102,11 +112,22 @@ class OrderService:
         """
         Constructs Order and OrderItem records from cart and snapshot metadata.
         """
-        summary = await self.calculate_checkout_summary(user.id, coupon_code)
-        cart_items = await CartItem.find(CartItem.user_id == user.id).to_list()
+        user_id = user.id if user else None
+        summary = await self.calculate_checkout_summary(
+            user_id=user_id,
+            session_id=session_id,
+            coupon_code=coupon_code,
+        )
+
+        if user_id:
+            cart_items = await CartItem.find(CartItem.user_id == user_id).to_list()
+        elif session_id:
+            cart_items = await CartItem.find(CartItem.session_id == session_id).to_list()
+        else:
+            cart_items = []
 
         address_snapshot = None
-        if shipping_address_id:
+        if shipping_address_id and user:
             addr = next((a for a in user.addresses if a.id == shipping_address_id), None)
             if not addr:
                 raise NotFoundException(code="ADDRESS_NOT_FOUND", message="Shipping address not found")
@@ -153,8 +174,11 @@ class OrderService:
             product_quantities.append((product, item.quantity))
 
         coupon_obj = summary.get("coupon")
+        customer_email = user.email if user else (guest_email or (address_snapshot.get("email") if address_snapshot else None))
+
         order = Order(
-            user_id=user.id,
+            user_id=user_id,
+            customer_email=customer_email,
             status="pending",
             payment_status="requires_payment_method",
             subtotal_amount=summary["subtotal"],
@@ -218,14 +242,20 @@ class OrderService:
         order.updated_at = now
         await order.save()
 
-        # Clear cart for user
-        await CartItem.find(CartItem.user_id == order.user_id).delete()
+        # Clear cart for user or guest session
+        if order.user_id:
+            await CartItem.find(CartItem.user_id == order.user_id).delete()
+        if metadata and metadata.get("session_id"):
+            await CartItem.find(CartItem.session_id == metadata.get("session_id")).delete()
+
         logger.info(f"Order {order.id} successfully fulfilled and paid via PaymentIntent {payment_intent_id}")
         return order
 
     async def create_zero_total_order(
         self,
-        user: User,
+        user: Optional[User] = None,
+        session_id: Optional[str] = None,
+        guest_email: Optional[str] = None,
         shipping_address_id: Optional[uuid.UUID] = None,
         shipping_address_data: Optional[Dict[str, Any]] = None,
         coupon_code: Optional[str] = None,
@@ -233,12 +263,19 @@ class OrderService:
         """
         Direct fulfillment for 100% coupon discounted zero-total orders without creating a Stripe intent.
         """
-        summary = await self.calculate_checkout_summary(user.id, coupon_code)
+        user_id = user.id if user else None
+        summary = await self.calculate_checkout_summary(
+            user_id=user_id,
+            session_id=session_id,
+            coupon_code=coupon_code,
+        )
         if summary["total"] > 0.0:
             raise BadRequestException(message="This order has a non-zero total and requires payment")
 
         order, product_quantities = await self.prepare_order_and_items(
             user=user,
+            session_id=session_id,
+            guest_email=guest_email,
             shipping_address_id=shipping_address_id,
             shipping_address_data=shipping_address_data,
             coupon_code=coupon_code,
@@ -259,7 +296,11 @@ class OrderService:
         await order.insert()
 
         # Clear cart
-        await CartItem.find(CartItem.user_id == user.id).delete()
+        if user_id:
+            await CartItem.find(CartItem.user_id == user_id).delete()
+        if session_id:
+            await CartItem.find(CartItem.session_id == session_id).delete()
+
         return order
 
     async def get_order_by_id(self, order_id: uuid.UUID, user: Optional[User] = None) -> Order:

@@ -19,7 +19,8 @@ class OrderItemResponse(BaseModel):
 
 class OrderResponse(BaseModel):
     id: uuid.UUID
-    user_id: uuid.UUID
+    user_id: Optional[uuid.UUID] = None
+    customer_email: Optional[str] = None
     status: str
     payment_status: str = "requires_payment_method"
     subtotal_amount: float

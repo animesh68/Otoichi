@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, status
 
 from app.core.config import settings
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_guest_session_id, get_optional_current_user
 from app.core.exceptions import BadRequestException
 from app.db.models.order import Order
 from app.db.models.user import User
@@ -22,14 +22,18 @@ checkout_router = APIRouter(prefix="/checkout", tags=["Checkout"])
 @checkout_router.post("/summary", response_model=CheckoutSummaryResponse)
 async def get_checkout_summary(
     req: CheckoutRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    session_id: Optional[str] = Depends(get_guest_session_id),
 ):
     """
     Get authoritative server-side pricing breakdown, shipping rate, and coupon discount.
+    Works for both authenticated customers and guest sessions.
     """
     order_service = OrderService()
+    user_id = current_user.id if current_user else None
     summary = await order_service.calculate_checkout_summary(
-        user_id=current_user.id,
+        user_id=user_id,
+        session_id=session_id,
         coupon_code=req.coupon_code,
     )
     return CheckoutSummaryResponse(
@@ -47,20 +51,24 @@ async def get_checkout_summary(
 @checkout_router.post("/create-intent", response_model=PaymentIntentResponse)
 async def create_payment_intent(
     req: CheckoutRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    session_id: Optional[str] = Depends(get_guest_session_id),
 ):
     """
-    Create a Stripe PaymentIntent for the current user's cart.
+    Create a Stripe PaymentIntent for the current user's or guest's cart.
     Server is the single source of truth for prices, discounts, and inventory validation.
     """
     order_service = OrderService()
+    user_id = current_user.id if current_user else None
     summary = await order_service.calculate_checkout_summary(
-        user_id=current_user.id,
+        user_id=user_id,
+        session_id=session_id,
         coupon_code=req.coupon_code,
     )
 
     checkout_id = req.checkout_id or f"chk_{uuid.uuid4().hex[:12]}"
-    idempotency_key = f"idem_{current_user.id}_{checkout_id}"
+    identity_prefix = str(current_user.id) if current_user else (session_id or "guest")
+    idempotency_key = f"idem_{identity_prefix}_{checkout_id}"
 
     # Handle 100% coupon zero-total orders safely
     if summary["is_zero_total"]:
@@ -80,7 +88,7 @@ async def create_payment_intent(
     address_snapshot = None
     if req.new_shipping_address:
         address_snapshot = req.new_shipping_address.model_dump()
-    elif req.shipping_address_id:
+    elif req.shipping_address_id and current_user:
         addr = next((a for a in current_user.addresses if a.id == req.shipping_address_id), None)
         if addr:
             address_snapshot = {
@@ -93,11 +101,15 @@ async def create_payment_intent(
                 "phone": addr.phone,
             }
 
+    guest_email = req.guest_email or (address_snapshot.get("email") if address_snapshot else None)
+
     # Prepare pending order in database
     existing_order = await Order.find_one(Order.checkout_id == checkout_id)
     if not existing_order:
         order, _ = await order_service.prepare_order_and_items(
             user=current_user,
+            session_id=session_id,
+            guest_email=guest_email,
             shipping_address_id=req.shipping_address_id,
             shipping_address_data=address_snapshot,
             coupon_code=req.coupon_code,
@@ -115,8 +127,9 @@ async def create_payment_intent(
     metadata = {
         "checkout_id": checkout_id,
         "order_id": str(order.id),
-        "user_id": str(current_user.id),
-        "user_email": current_user.email,
+        "user_id": str(current_user.id) if current_user else "guest",
+        "user_email": current_user.email if current_user else (guest_email or ""),
+        "session_id": session_id or "",
         "coupon_code": req.coupon_code or "",
     }
 
@@ -147,7 +160,8 @@ async def create_payment_intent(
 @checkout_router.post("/zero-total-order", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
 async def create_zero_total_order(
     req: ZeroTotalOrderRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    session_id: Optional[str] = Depends(get_guest_session_id),
 ):
     """
     Direct fulfillment endpoint for orders that have a $0.00 balance due to full promotional coupons.
@@ -159,6 +173,8 @@ async def create_zero_total_order(
 
     order = await order_service.create_zero_total_order(
         user=current_user,
+        session_id=session_id,
+        guest_email=req.guest_email,
         shipping_address_id=req.shipping_address_id,
         shipping_address_data=address_snapshot,
         coupon_code=req.coupon_code,
@@ -169,7 +185,8 @@ async def create_zero_total_order(
 @checkout_router.post("/direct-order", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
 async def create_direct_order(
     req: CheckoutRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    session_id: Optional[str] = Depends(get_guest_session_id),
 ):
     """
     Direct checkout helper for testing / administrative creation.
@@ -179,8 +196,11 @@ async def create_direct_order(
     if req.new_shipping_address:
         address_snapshot = req.new_shipping_address.model_dump()
 
+    guest_email = req.guest_email or (address_snapshot.get("email") if address_snapshot else None)
     order, product_quantities = await order_service.prepare_order_and_items(
         user=current_user,
+        session_id=session_id,
+        guest_email=guest_email,
         shipping_address_id=req.shipping_address_id,
         shipping_address_data=address_snapshot,
         coupon_code=req.coupon_code,
@@ -197,14 +217,19 @@ async def create_direct_order(
     await order.insert()
 
     from app.db.models.cart import CartItem
-    await CartItem.find(CartItem.user_id == current_user.id).delete()
+    if current_user:
+        await CartItem.find(CartItem.user_id == current_user.id).delete()
+    if session_id:
+        await CartItem.find(CartItem.session_id == session_id).delete()
+
     return order
 
 
 @checkout_router.post("/complete", response_model=OrderResponse)
 async def complete_mock_checkout(
     payload: dict,
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    session_id: Optional[str] = Depends(get_guest_session_id),
 ):
     """
     Development completion helper (when webhooks are not locally connected in dev mock mode).
@@ -216,13 +241,18 @@ async def complete_mock_checkout(
     if not payment_intent_id:
         raise BadRequestException(message="payment_intent_id is required")
 
+    metadata = {
+        "user_id": str(current_user.id) if current_user else "guest",
+        "session_id": session_id or "",
+    }
+
     order = await order_service.fulfill_paid_order(
         payment_intent_id=payment_intent_id,
         payment_method_type="card",
-        metadata={"user_id": str(current_user.id)},
+        metadata=metadata,
     )
     if not order:
-        order = await Order.find_one(Order.user_id == current_user.id, Order.stripe_payment_intent_id == payment_intent_id)
+        order = await Order.find_one(Order.stripe_payment_intent_id == payment_intent_id)
 
     if not order:
         raise BadRequestException(message="Order fulfillment failed")
