@@ -1,5 +1,5 @@
 // API Client with automatic JWT and guest session handling
-const API_BASE = '/api/v1';
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(/\/+$/, '');
 
 export function getAuthToken() {
   return localStorage.getItem('otoichi_token');
@@ -38,8 +38,11 @@ export async function apiRequest(endpoint, options = {}) {
     headers
   };
 
+  const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const fullUrl = endpoint.startsWith('http') ? endpoint : `${API_BASE}${normalizedEndpoint}`;
+
   try {
-    const res = await fetch(`${API_BASE}${endpoint}`, config);
+    const res = await fetch(fullUrl, config);
     
     if (res.status === 204) {
       return null;
