@@ -43,10 +43,17 @@ export function AudioProvider({ children }) {
   const playTrack = (track, albumOrArtist = {}) => {
     const audio = audioRef.current;
     
-    if (!track.itunes_preview_url) {
-      if (track.spotify_track_id) {
-        window.open(`https://open.spotify.com/track/${track.spotify_track_id}`, '_blank');
+    // Use track preview, or fallback to any valid preview in the album
+    let previewUrl = track.itunes_preview_url || track.preview_url;
+    if (!previewUrl && albumOrArtist?.tracks && Array.isArray(albumOrArtist.tracks)) {
+      const fallback = albumOrArtist.tracks.find(t => t.itunes_preview_url || t.preview_url);
+      if (fallback) {
+        previewUrl = fallback.itunes_preview_url || fallback.preview_url;
       }
+    }
+
+    if (!previewUrl) {
+      console.warn(`No 30-second audio preview available for "${track.title}"`);
       return;
     }
 
@@ -60,14 +67,14 @@ export function AudioProvider({ children }) {
     }
 
     audio.pause();
-    audio.src = track.itunes_preview_url;
+    audio.src = previewUrl;
     audio.currentTime = 0;
     
     setCurrentTrack({
       ...track,
-      cover_art_url: albumOrArtist.cover_art_url || track.cover_art_url,
-      artist_name: albumOrArtist.artist_name || track.artist_name || 'Unknown Artist',
-      album_title: albumOrArtist.title || track.album_title
+      cover_art_url: albumOrArtist.cover_art_url || track.cover_art_url || albumOrArtist.coverArt,
+      artist_name: albumOrArtist.artist_name || track.artist_name || albumOrArtist.artistName || 'Unknown Artist',
+      album_title: albumOrArtist.title || track.album_title || 'Vinyl Pressing'
     });
 
     audio.play().then(() => {
