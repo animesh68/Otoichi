@@ -64,3 +64,36 @@ def decode_token(token: str) -> Dict[str, Any]:
         algorithms=[settings.JWT_ALGORITHM],
         options={"require": ["exp", "sub", "type"]}
     )
+
+
+def generate_unsubscribe_token(email: str) -> str:
+    """Generate a tamper-proof signed token for secure one-click email unsubscription."""
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(days=365)  # 1 year validity
+    payload = {
+        "sub": email.strip().lower(),
+        "type": "unsubscribe",
+        "iat": now,
+        "exp": expire,
+    }
+    return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+
+
+def verify_unsubscribe_token(token: str) -> Optional[str]:
+    """
+    Validate an unsubscribe token and return the normalized email address.
+    Returns None if token is invalid, expired, or corrupted.
+    """
+    try:
+        payload = jwt.decode(
+            token,
+            settings.JWT_SECRET,
+            algorithms=[settings.JWT_ALGORITHM],
+            options={"require": ["exp", "sub", "type"]}
+        )
+        if payload.get("type") != "unsubscribe":
+            return None
+        return payload.get("sub", "").strip().lower() or None
+    except Exception:
+        return None
+

@@ -27,6 +27,10 @@ async def get_document_models() -> List:
         StockNotification,
         StripeWebhookEvent,
     )
+    from app.db.models.newsletter import (
+        NewsletterSubscriber,
+        NewsletterCampaign,
+    )
     return [
         User,
         Artist,
@@ -40,6 +44,8 @@ async def get_document_models() -> List:
         Coupon,
         StockNotification,
         StripeWebhookEvent,
+        NewsletterSubscriber,
+        NewsletterCampaign,
     ]
 
 async def connect_to_mongo(database_url: str = None, db_name: str = None, client: AsyncIOMotorClient = None):

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import NewsletterSignup from './NewsletterSignup';
 
 export default function Footer() {
   return (
@@ -53,13 +54,7 @@ export default function Footer() {
           </div>
 
           <div>
-            <h4 style={{ fontFamily: 'var(--font-body)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--brass)', marginBottom: '16px' }}>
-              Market Hours
-            </h4>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', lineHeight: '1.6' }}>
-              Orders dispatched daily from Tokyo & Kyoto hubs.<br />
-              Audiophile-grade rigid mailers standard.
-            </p>
+            <NewsletterSignup variant="compact" />
           </div>
         </div>
 

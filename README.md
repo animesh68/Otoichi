@@ -283,7 +283,15 @@ The backend exposes a fully typed RESTful API under the `/api/v1` prefix. Intera
 | **Orders** | `GET` | `/api/v1/orders/` | List customer order history | Yes (Customer) |
 | | `GET` | `/api/v1/orders/{id}` | Get detailed order snapshot & items | Yes (Customer) |
 | **Coupons & Promo** | `POST` | `/api/v1/coupons/validate` | Validate coupon code against cart subtotal | No |
+| **Newsletter (Resend)**| `POST` | `/api/v1/newsletter/subscribe` | Subscribe email to weekly editorial dispatch | No |
+| | `POST` | `/api/v1/newsletter/unsubscribe` | Secure one-click unsubscribe via signed token | No |
+| | `POST` | `/api/v1/newsletter/trigger-weekly` | Idempotent Monday campaign scheduler job | Yes (`CRON_SECRET` / Admin) |
 | **Admin** | `GET` | `/api/v1/admin/metrics` | System sales, revenue, and inventory analytics | Yes (Admin) |
+| | `GET` | `/api/v1/admin/cache/metrics` | Real-time Redis/Memory cache telemetry & hit ratios | Yes (Admin) |
+| | `POST` | `/api/v1/admin/cache/flush` | Invalidate all cached data on demand | Yes (Admin) |
+| | `GET` | `/api/v1/admin/newsletter/metrics` | Newsletter subscribers & campaign analytics | Yes (Admin) |
+| | `GET` | `/api/v1/admin/newsletter/subscribers` | Paginated subscriber management list | Yes (Admin) |
+| | `GET` | `/api/v1/admin/newsletter/campaigns` | History of dispatched weekly issues | Yes (Admin) |
 | | `PATCH` | `/api/v1/admin/orders/{id}/status`| Update order status with transition validation | Yes (Admin) |
 | | `POST` | `/api/v1/admin/sync/spotify`| Trigger Spotify/iTunes metadata sync pipeline | Yes (Admin) |
 
@@ -293,17 +301,20 @@ The backend exposes a fully typed RESTful API under the `/api/v1` prefix. Intera
 
 | Layer | Technology | Details |
 | :--- | :--- | :--- |
-| **Frontend Framework** | React 19 + Vite 8 | Single Page Application with client-side routing |
-| **Frontend Routing** | React Router v7 | Dynamic product, category, cart, and checkout routing |
-| **Payment UI** | `@stripe/react-stripe-js` | Stripe Payment Elements with custom theme |
+| **Frontend Framework** | React 19 + Vite 8 | Single Page Application with client-side routing, route-level code splitting |
+| **Frontend Routing** | React Router v7 | Dynamic product, category, cart, checkout, and unsubscribe routing |
+| **Payment UI** | `@stripe/react-stripe-js` | Stripe Payment Elements with custom theme (lazy-loaded) |
 | **Styling** | Vanilla CSS Design Tokens | HSL-tailored palette, brass accents, glassmorphism, responsive grid |
 | **Icons & Visuals** | Lucide React + Canvas Confetti | Vector icons and interactive celebration feedback |
 | **Backend Framework** | FastAPI (Python 3.12+) | Asynchronous ASGI REST API framework |
-| **Database & ODM** | MongoDB Atlas + Beanie ODM | Document database with Motor async driver and Pydantic schemas |
+| **Database & ODM** | MongoDB Atlas + Beanie ODM | Document database with Motor async driver and batched subdocument resolution |
+| **Caching Layer** | Upstash Redis + MemoryCache | Cache-aside architecture with deterministic keys, TTLs, targeted invalidation, and graceful offline fallback |
 | **Authentication** | JWT (PyJWT) + Passlib (Bcrypt) | Short-lived access tokens (1h) + Refresh tokens (7d) |
 | **Payment Gateway** | Stripe Python SDK | PaymentIntents, Webhook signature verification, SCA/3DS |
-| **External APIs** | Spotify Web API + Apple iTunes API | Album art, track metadata, and 30-second audio stream ingestion |
-| **Testing** | Pytest + `pytest-asyncio` + HTTPX | Automated test suite covering auth, cart, payments, webhooks |
+| **Email & Newsletter** | Resend API + Jinja/HTML | Editorial weekly dispatch ("Letters from the Listening Room"), tamper-proof signed unsubscribe tokens |
+| **External APIs** | Spotify Web API + Apple iTunes API | Album art, track metadata, and 30-second audio stream ingestion with response caching |
+| **Scheduler** | Vercel Cron / Serverless | Automated Monday 09:00 UTC dispatch with ISO week database-level idempotency |
+| **Testing** | Pytest + `pytest-asyncio` + HTTPX | Automated test suite covering auth, cart, payments, webhooks, newsletter, cache (50 tests) |
 
 ---
 
@@ -457,9 +468,24 @@ To test live asynchronous payment fulfillment locally:
 
 ---
 
-## 11. Automated Testing
+## 11. Upstash Redis Caching & Deployment
 
-The backend includes a comprehensive test suite written with `pytest` and `pytest-asyncio`.
+Otoichi utilizes a resilient **Cache-Aside Architecture** with **Upstash Redis** (or Redis Cloud) for low-latency catalog caching, with automatic in-memory fallback if Redis is unconfigured or offline.
+
+### How to Connect Upstash Redis:
+1. Create a free account at [https://upstash.com](https://upstash.com).
+2. Create a new **Redis** database (select your preferred region, e.g., US East / EU Central).
+3. Copy the **Redis URL** (`rediss://default:YOUR_PASSWORD@...upstash.io:6379`).
+4. Set backend environment variables on Render:
+   * `REDIS_URL=rediss://default:...@...upstash.io:6379`
+   * `CACHE_ENABLED=true`
+5. Verify cache telemetry via the admin endpoint `GET /api/v1/admin/cache/metrics` or flush with `POST /api/v1/admin/cache/flush`.
+
+---
+
+## 12. Automated Testing
+
+The backend includes a comprehensive test suite written with `pytest` and `pytest-asyncio` covering authentication, catalog N+1 batching, cart/checkout, Stripe webhooks, Resend newsletter, and Redis caching (50 passing tests).
 
 ```bash
 # Run all test suites

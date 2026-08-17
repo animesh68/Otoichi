@@ -260,6 +260,9 @@ export default function CoverflowHero({ albums = [] }) {
                         <img
                           src={album.cover_art_url}
                           alt={album.title}
+                          decoding="async"
+                          width="240"
+                          height="240"
                           style={{
                             width: '100%',
                             height: '100%',

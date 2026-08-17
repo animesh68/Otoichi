@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowRight, Sparkles, Disc } from 'lucide-react';
 import CoverflowHero from '../components/CoverflowHero';
 import ProductCard from '../components/ProductCard';
+import NewsletterSignup from '../components/NewsletterSignup';
 import { CatalogService } from '../api/services';
 
 export default function HomePage() {
@@ -202,6 +203,10 @@ export default function HomePage() {
         </section>
 
       </div>
+
+      {/* Section 4: Letters from the Listening Room Newsletter */}
+      <NewsletterSignup variant="section" />
     </div>
   );
 }
+

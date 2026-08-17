@@ -11,6 +11,7 @@ from app.db.models.social_and_promo import (
     StockNotification,
     StripeWebhookEvent,
 )
+from app.db.models.newsletter import NewsletterSubscriber, NewsletterCampaign
 
 __all__ = [
     "Base",
@@ -30,4 +31,6 @@ __all__ = [
     "Coupon",
     "StockNotification",
     "StripeWebhookEvent",
+    "NewsletterSubscriber",
+    "NewsletterCampaign",
 ]

@@ -4,6 +4,7 @@ from beanie.odm.operators.update.general import Inc
 
 from app.core.exceptions import InsufficientStockException, NotFoundException
 from app.db.models.product import VinylProduct
+from app.services.cache_service import cache_service
 
 
 class InventoryService:
@@ -55,12 +56,16 @@ class InventoryService:
                 details={"available_stock": avail, "requested": quantity, "sku": product.sku},
             )
 
+        # Invalidate cached product and listings
+        await cache_service.invalidate_product(product_id)
+
         # Return updated product
         product.stock_quantity -= quantity
         return product
 
     async def restore_stock(self, product_id: uuid.UUID, quantity: int) -> None:
-        """Restore inventory when an order is cancelled."""
+        """Restores stock on order cancellation or failure."""
         await VinylProduct.find_one(VinylProduct.id == product_id).update(
             Inc({VinylProduct.stock_quantity: quantity})
         )
+        await cache_service.invalidate_product(product_id)

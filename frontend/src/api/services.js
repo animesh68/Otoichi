@@ -156,3 +156,20 @@ export const AuthService = {
     return apiRequest('/auth/me');
   }
 };
+
+export const NewsletterService = {
+  subscribe: async (payload) => {
+    return apiRequest('/newsletter/subscribe', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  unsubscribe: async (token) => {
+    return apiRequest('/newsletter/unsubscribe', {
+      method: 'POST',
+      body: JSON.stringify({ token })
+    });
+  }
+};
+

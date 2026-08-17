@@ -9,7 +9,8 @@ from app.db.models.catalog import Album, Artist, Track
 from app.db.models.product import VinylProduct
 from app.schemas.common import PaginatedResponse
 from app.schemas.product import ProductResponse
-from app.services.cart_service import build_product_response
+from app.services.cache_service import cache_service
+from app.services.cart_service import build_product_response, build_products_response_batch
 
 products_router = APIRouter(prefix="/products", tags=["Vinyl Products"])
 
@@ -35,7 +36,28 @@ async def list_products(
 ):
     """
     Search and filter sellable vinyl products with pagination and sorting.
+    Cached with cache-aside strategy for 5 minutes (300s TTL).
     """
+    cache_key = cache_service.make_key(
+        "products:v1",
+        q=q,
+        genre=genre,
+        artist_id=artist_id,
+        album_id=album_id,
+        format=format,
+        vinyl_variant=vinyl_variant,
+        min_price=min_price,
+        max_price=max_price,
+        in_stock=in_stock,
+        is_preorder=is_preorder,
+        sort_by=sort_by,
+        page=page,
+        page_size=page_size,
+    )
+    cached = await cache_service.get(cache_key)
+    if cached:
+        return PaginatedResponse[ProductResponse](**cached)
+
     filters = []
 
     if q:
@@ -100,10 +122,10 @@ async def list_products(
         query = query.sort(-VinylProduct.created_at)
 
     products = await query.skip((page - 1) * page_size).limit(page_size).to_list()
-    items = [await build_product_response(p) for p in products]
+    items = await build_products_response_batch(products)
 
     total_pages = math.ceil(total / page_size) if total > 0 else 1
-    return PaginatedResponse(
+    response = PaginatedResponse(
         items=items,
         total=total,
         page=page,
@@ -112,13 +134,23 @@ async def list_products(
         has_next=page < total_pages,
         has_prev=page > 1,
     )
+    await cache_service.set(cache_key, response, ttl=300)
+    return response
 
 
 @products_router.get("/{product_id}", response_model=ProductResponse)
 async def get_product(product_id: uuid.UUID):
-    """Get single vinyl product details with computed derived low_stock flag."""
+    """Get single vinyl product details. Cached for 10 minutes (600s TTL)."""
+    cache_key = f"product:v1:{product_id}"
+    cached = await cache_service.get(cache_key)
+    if cached:
+        return ProductResponse(**cached)
+
     product = await VinylProduct.find_one(VinylProduct.id == product_id)
     if not product:
         raise NotFoundException(code="PRODUCT_NOT_FOUND", message="Product not found")
 
-    return await build_product_response(product)
+    response = await build_product_response(product)
+    await cache_service.set(cache_key, response, ttl=600)
+    return response
+

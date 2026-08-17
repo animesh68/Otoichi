@@ -29,11 +29,22 @@ class Settings(BaseSettings):
     STRIPE_CURRENCY: str = "usd"
     ALLOW_MOCK_PAYMENTS: bool = True
 
+    # Resend Email & Newsletter
+    RESEND_API_KEY: str = ""
+    NEWSLETTER_FROM_EMAIL: str = "newsletter@otoichi.com"
+    NEWSLETTER_FROM_NAME: str = "Otoichi (音市)"
+    PUBLIC_APP_URL: str = "https://otoichi.vercel.app"
+    CRON_SECRET: str = "otoichi_cron_secret_key_change_me"
+
     # Business Rules
     LOW_STOCK_THRESHOLD: int = 5
     DEFAULT_CURRENCY: str = "USD"
     FLAT_SHIPPING_RATE: float = 7.50
     FREE_SHIPPING_THRESHOLD: float = 100.00
+
+    # Redis / Upstash Caching
+    REDIS_URL: str = ""
+    CACHE_ENABLED: bool = True
 
     # CORS
     CORS_ORIGINS: Union[List[str], str] = ["*"]

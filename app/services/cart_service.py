@@ -1,6 +1,4 @@
-import uuid
-from typing import List, Optional
-
+from beanie.operators import In
 from app.core.exceptions import BadRequestException, InsufficientStockException, NotFoundException
 from app.db.models.cart import CartItem
 from app.db.models.catalog import Album, Track, Artist
@@ -10,18 +8,58 @@ from app.schemas.catalog import AlbumResponse, ArtistResponse, TrackResponse
 from app.schemas.product import ProductResponse
 
 
-async def build_product_response(product: VinylProduct) -> ProductResponse:
-    """Helper to populate AlbumResponse / TrackResponse on ProductResponse."""
-    album_resp = None
-    track_resp = None
+async def build_products_response_batch(products: List[VinylProduct]) -> List[ProductResponse]:
+    """
+    Batch-resolve Album, Artist, and Track metadata for multiple VinylProducts
+    in a constant number of database queries (eliminating N+1 query cascades).
+    """
+    if not products:
+        return []
 
-    if product.album_id:
-        album = await Album.find_one(Album.id == product.album_id)
-        if album:
-            artist = await Artist.find_one(Artist.id == album.artist_id)
+    # 1. Collect unique album and track IDs
+    album_ids = list({p.album_id for p in products if p.album_id})
+    direct_track_ids = list({p.track_id for p in products if p.track_id})
+
+    # 2. Fetch all albums in one query
+    albums = await Album.find(In(Album.id, album_ids)).to_list() if album_ids else []
+    album_map = {a.id: a for a in albums}
+
+    # 3. Fetch all artists in one query
+    artist_ids = list({a.artist_id for a in albums if a.artist_id})
+    artists = await Artist.find(In(Artist.id, artist_ids)).to_list() if artist_ids else []
+    artist_map = {art.id: art for art in artists}
+
+    # 4. Fetch all album tracks in one query
+    album_tracks = (
+        await Track.find(In(Track.album_id, album_ids)).sort(+Track.track_number).to_list()
+        if album_ids
+        else []
+    )
+    tracks_by_album: dict[uuid.UUID, list] = {}
+    for t in album_tracks:
+        if t.album_id:
+            tracks_by_album.setdefault(t.album_id, []).append(t)
+
+    # 5. Fetch standalone tracks if any
+    direct_tracks = (
+        await Track.find(In(Track.id, direct_track_ids)).to_list()
+        if direct_track_ids
+        else []
+    )
+    direct_track_map = {dt.id: dt for dt in direct_tracks}
+
+    # 6. Assemble ProductResponse objects in memory
+    results: List[ProductResponse] = []
+    for product in products:
+        album_resp = None
+        track_resp = None
+
+        if product.album_id and product.album_id in album_map:
+            album = album_map[product.album_id]
+            artist = artist_map.get(album.artist_id)
             artist_name = artist.name if artist else album.artist_name
             artist_resp = ArtistResponse.model_validate(artist) if artist else None
-            tracks = await Track.find(Track.album_id == album.id).sort(+Track.track_number).to_list()
+            trks = tracks_by_album.get(album.id, [])
             album_resp = AlbumResponse(
                 id=album.id,
                 title=album.title,
@@ -35,13 +73,12 @@ async def build_product_response(product: VinylProduct) -> ProductResponse:
                 label=album.label,
                 created_at=album.created_at,
                 artist=artist_resp,
-                tracks=[TrackResponse.model_validate(t) for t in tracks],
+                tracks=[TrackResponse.model_validate(t) for t in trks],
             )
 
-    if product.track_id:
-        track = await Track.find_one(Track.id == product.track_id)
-        if track:
-            artist = await Artist.find_one(Artist.id == track.artist_id) if track.artist_id else None
+        if product.track_id and product.track_id in direct_track_map:
+            track = direct_track_map[product.track_id]
+            artist = artist_map.get(track.artist_id) if track.artist_id else None
             track_artist_name = artist.name if artist else getattr(track, "artist_name", None)
             track_resp = TrackResponse(
                 id=track.id,
@@ -56,24 +93,35 @@ async def build_product_response(product: VinylProduct) -> ProductResponse:
                 created_at=track.created_at,
             )
 
-    return ProductResponse(
-        id=product.id,
-        product_type=product.product_type,
-        album_id=product.album_id,
-        track_id=product.track_id,
-        format=product.format,
-        vinyl_variant=product.vinyl_variant,
-        price=product.price,
-        currency=product.currency,
-        stock_quantity=product.stock_quantity,
-        sku=product.sku,
-        is_preorder=product.is_preorder,
-        release_date=product.release_date,
-        image_urls=product.image_urls,
-        created_at=product.created_at,
-        album=album_resp,
-        track=track_resp,
-    )
+        results.append(
+            ProductResponse(
+                id=product.id,
+                product_type=product.product_type,
+                album_id=product.album_id,
+                track_id=product.track_id,
+                format=product.format,
+                vinyl_variant=product.vinyl_variant,
+                price=product.price,
+                currency=product.currency,
+                stock_quantity=product.stock_quantity,
+                sku=product.sku,
+                is_preorder=product.is_preorder,
+                release_date=product.release_date,
+                image_urls=product.image_urls,
+                created_at=product.created_at,
+                album=album_resp,
+                track=track_resp,
+            )
+        )
+
+    return results
+
+
+async def build_product_response(product: VinylProduct) -> ProductResponse:
+    """Helper to populate AlbumResponse / TrackResponse on a single ProductResponse."""
+    batch = await build_products_response_batch([product])
+    return batch[0]
+
 
 
 class CartService:

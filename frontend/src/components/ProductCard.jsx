@@ -57,6 +57,7 @@ export default function ProductCard({ product }) {
             src={d.coverArt}
             alt={d.title}
             loading="lazy"
+            decoding="async"
             style={{
               position: 'absolute',
               top: 0,

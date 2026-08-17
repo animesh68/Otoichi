@@ -27,12 +27,15 @@ class iTunesService:
         Search iTunes Search API for a 30-second audio preview.
         Returns previewUrl if found, else None. Never crashes on missing match.
         """
-        if not artist_name or not track_title:
-            return None
-
         clean_artist = self._normalize(artist_name)
         clean_title = self._normalize(track_title)
         query = f"{artist_name} {track_title}"
+
+        from app.services.cache_service import cache_service
+        cache_key = cache_service.make_key("external:itunes:v1", a=clean_artist, t=clean_title)
+        cached_url = await cache_service.get(cache_key)
+        if cached_url is not None:
+            return None if cached_url == "__none__" else cached_url
 
         try:
             async with httpx.AsyncClient(timeout=8.0) as client:
@@ -52,9 +55,11 @@ class iTunesService:
                 results = data.get("results", [])
                 if not results:
                     logger.info(f"No iTunes preview match for '{artist_name} - {track_title}'")
+                    await cache_service.set(cache_key, "__none__", ttl=7200)
                     return None
 
                 # Find best match
+                matched_url = None
                 for item in results:
                     item_artist = self._normalize(item.get("artistName", ""))
                     item_track = self._normalize(item.get("trackName", ""))
@@ -62,11 +67,14 @@ class iTunesService:
 
                     # Check if artist or track matches reasonably
                     if (clean_title in item_track or item_track in clean_title) and preview_url:
-                        return preview_url
+                        matched_url = preview_url
+                        break
 
-                # If no strict match, fallback to the top result's preview if available
-                first_preview = results[0].get("previewUrl")
-                return first_preview
+                if not matched_url and results:
+                    matched_url = results[0].get("previewUrl")
+
+                await cache_service.set(cache_key, matched_url or "__none__", ttl=7200)
+                return matched_url
 
         except Exception as e:
             logger.warning(f"iTunes search failed for '{artist_name} - {track_title}': {e}")
