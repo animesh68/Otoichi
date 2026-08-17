@@ -1,3 +1,6 @@
+import uuid
+from typing import List, Optional
+
 from beanie.operators import In
 from app.core.exceptions import BadRequestException, InsufficientStockException, NotFoundException
 from app.db.models.cart import CartItem
